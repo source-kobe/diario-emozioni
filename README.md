@@ -7,6 +7,7 @@ Privato, senza account, tutto resta sul tuo telefono.
 
 ![Versione beta](https://img.shields.io/badge/stato-BETA-orange?style=flat-square)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)
+[![Licenza MIT](https://img.shields.io/badge/licenza-MIT-blue?style=flat-square)](LICENSE)
 
 <br>
 
@@ -123,7 +124,10 @@ Se `chiave-diario.jks` non esiste, ne crea una nuova con quella password.
    Non segnarla come *pre-release*: l'app e il tasto di download guardano solo l'ultima release normale.
 4. Allega l'APK con il nome **`Diario-Emozioni.apk`**: è il nome a cui punta il tasto di download.
 
-## Crediti
+## Licenza
+
+Il codice è distribuito con licenza [MIT](LICENSE): puoi usarlo, modificarlo e ridistribuirlo,
+anche in altri progetti, purché mantieni l'avviso di copyright.
 
 Caratteri tipografici: [Instrument Sans](https://github.com/Instrument/instrument-sans) e
 [Newsreader](https://github.com/productiontype/Newsreader), distribuiti con licenza
