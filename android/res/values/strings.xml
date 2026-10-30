@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Diario Emozioni</string>
+    <string name="nome_sconti">Sconti</string>
+    <!-- utente/repository su GitHub: da qui l'app cerca gli aggiornamenti -->
+    <string name="repo_github" translatable="false">source-kobe/diario-emozioni</string>
+</resources>

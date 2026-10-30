@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tre bolle sovrapposte: le tinte con cui l'app allaga lo sfondo. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#E9AB4B"
+        android:fillAlpha="0.95"
+        android:pathData="M38,40 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0 Z" />
+    <path
+        android:fillColor="#37B4CE"
+        android:fillAlpha="0.85"
+        android:pathData="M27,62 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0 Z" />
+    <path
+        android:fillColor="#9B7CE0"
+        android:fillAlpha="0.85"
+        android:pathData="M49,62 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0 Z" />
+</vector>

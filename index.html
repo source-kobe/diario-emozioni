@@ -1,0 +1,3744 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diario delle Emozioni</title>
+
+<script>
+  // L'app Android passa il tema di sistema nell'hash, prima del primo disegno.
+  (function () {
+    var t = (location.hash || "").slice(1);
+    if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+  })();
+
+  // Se il PIN è attivo, la schermata di blocco copre tutto PRIMA del primo
+  // disegno: il diario non deve mai comparire, nemmeno per un fotogramma.
+  (function () {
+    try {
+      var c = localStorage.getItem("diario-emozioni-blocco-v1");
+      if (c && JSON.parse(c).hash) document.documentElement.setAttribute("data-bloccato", "1");
+    } catch (err) { /* archivio non leggibile: nessun blocco */ }
+  })();
+</script>
+
+<style>
+  @font-face {
+    font-family: "Instrument Sans";
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url("fonts/InstrumentSans-normal.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Instrument Sans";
+    font-style: italic;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url("fonts/InstrumentSans-italic.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Newsreader";
+    font-style: normal;
+    font-weight: 300 400;
+    font-display: swap;
+    src: url("fonts/Newsreader-normal.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Newsreader";
+    font-style: italic;
+    font-weight: 300 400;
+    font-display: swap;
+    src: url("fonts/Newsreader-italic.woff2") format("woff2");
+  }
+</style>
+
+<style>
+  :root {
+    --paper:      #F3F2F6;
+    --surface:    #FFFFFF;
+    --surface-2:  #FAF9FC;
+    --ink:        #1A1922;
+    --ink-soft:   #6B6779;
+    --ink-faint:  #9B97A8;
+    --line:       #E2E0E9;
+    --line-soft:  #EDEBF2;
+    --wash:       12%;
+    --wash-forte: 26%;
+    --shadow:     0 1px 2px rgba(26,25,34,.05), 0 8px 24px -12px rgba(26,25,34,.16);
+    --idle:       #6E6A86;
+
+    --gioia:     #D9922B;
+    --calma:     #3F9279;
+    --tristezza: #4472BE;
+    --paura:     #7154BD;
+    --ansia:     #5E7089;
+    --rabbia:    #C9452F;
+    --sorpresa:  #1B94AE;
+    --disgusto:  #74893A;
+    --vergogna:  #B84B76;
+    --colpa:     #8A5A44;
+
+    --emo: var(--idle);
+    --r: 14px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #121117;
+      --surface:   #1C1B24;
+      --surface-2: #22212B;
+      --ink:       #ECEAF2;
+      --ink-soft:  #9A96A9;
+      --ink-faint: #6D6980;
+      --line:      #2E2C39;
+      --line-soft: #26242F;
+      --wash:      20%;
+      --wash-forte: 34%;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+      --idle:      #8B87A3;
+
+      --gioia:     #E9AB4B;
+      --calma:     #55B295;
+      --tristezza: #6E9AE0;
+      --paura:     #9B7CE0;
+      --ansia:     #94A5BF;
+      --rabbia:    #E4654D;
+      --sorpresa:  #37B4CE;
+      --disgusto:  #9BB255;
+      --vergogna:  #DB6E97;
+      --colpa:     #C08A6E;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:     #121117;
+    --surface:   #1C1B24;
+    --surface-2: #22212B;
+    --ink:       #ECEAF2;
+    --ink-soft:  #9A96A9;
+    --ink-faint: #6D6980;
+    --line:      #2E2C39;
+    --line-soft: #26242F;
+    --wash:      20%;
+    --wash-forte: 34%;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+    --idle:      #8B87A3;
+
+    --gioia:     #E9AB4B;
+    --calma:     #55B295;
+    --tristezza: #6E9AE0;
+    --paura:     #9B7CE0;
+    --ansia:     #94A5BF;
+    --rabbia:    #E4654D;
+    --sorpresa:  #37B4CE;
+    --disgusto:  #9BB255;
+    --vergogna:  #DB6E97;
+    --colpa:     #C08A6E;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 100vh;
+  }
+
+  /* ---- fondo lavabile a bolla ---- */
+  #sfondo, #bolle {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  #sfondo { background: var(--paper); transition: background-color .3s ease; }
+  .bolla {
+    position: absolute;
+    border-radius: 50%;
+    transform: scale(0);
+    will-change: transform;
+  }
+  .bolla.cresci {
+    animation: cresci 640ms cubic-bezier(.22,.75,.3,1) forwards;
+  }
+  @keyframes cresci { to { transform: scale(1); } }
+
+  .guscio {
+    position: relative;
+    z-index: 1;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 14px 16px calc(84px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  /* La schermata Oggi occupa esattamente l'altezza del telefono: i campi
+     A/B/C si allargano o si stringono per assorbire lo spazio che resta.
+     Sotto i 580px d'altezza utile si rinuncia e si scorre. */
+  #vista-oggi {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: clamp(496px, calc(100vh - 98px - env(safe-area-inset-bottom)), 800px);
+    min-height: clamp(496px, calc(100dvh - 98px - env(safe-area-inset-bottom)), 800px);
+  }
+  #vista-oggi .blocco.abc {
+    flex: 1 1 0;
+    min-height: 66px;
+    gap: 5px;
+  }
+  #vista-oggi .blocco.abc textarea {
+    flex: 1 1 auto;
+    min-height: 42px;
+    height: auto;
+  }
+  /* la striscia della voce postuma sta sempre su una riga */
+  #vista-oggi .striscia-postuma { flex-wrap: nowrap; }
+  #vista-oggi #testo-postuma { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #vista-oggi .striscia-postuma button { flex: none; }
+
+  /* telefoni bassi: tutto un filo più stretto perché ci stia comunque */
+  @media (max-height: 780px) {
+    .guscio { padding-top: 10px; }
+    #vista-oggi { gap: 8px; }
+    #vista-oggi .oggi-data { font-size: 22px; }
+    #vista-oggi .ingranaggio { width: 32px; height: 32px; }
+    #vista-oggi .blocco { gap: 5px; }
+    #vista-oggi .emozioni { gap: 5px; }
+    #vista-oggi .emo-btn { padding: 5px 2px 4px; gap: 2px; }
+    #vista-oggi .emo-btn svg { width: 26px; height: 26px; }
+    #vista-oggi .tacca { padding: 7px 0 6px; }
+    #vista-oggi .scala-note { display: none; }
+    #vista-oggi .blocco.abc { min-height: 56px; gap: 4px; }
+    #vista-oggi .blocco.abc textarea { min-height: 36px; padding: 7px 11px; }
+    #vista-oggi .salva { padding: 11px; }
+    #vista-oggi .striscia-postuma { padding: 4px 5px 4px 8px; gap: 6px; font-size: 12px; }
+    #vista-oggi .striscia-postuma button { padding: 4px 10px; }
+  }
+
+  /* ---- testata ---- */
+  .testata { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .testata-destra { display: flex; align-items: center; gap: 10px; flex: none; }
+  .oggi-data {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 25px;
+    font-weight: 300;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+  }
+
+  /* la data di Oggi è un comando: apre la scelta del momento */
+  button.oggi-data {
+    appearance: none;
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+  button.oggi-data svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    color: var(--ink-faint);
+    transition: color .2s, transform .2s;
+  }
+  button.oggi-data:hover svg { color: var(--ink-soft); }
+  button.oggi-data:active { transform: scale(.985); }
+  button.oggi-data:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: 3px; border-radius: 4px; }
+
+  /* ---- avviso di voce postuma ---- */
+  .striscia-postuma {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 7px 8px 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--surface-2);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .badge-postuma {
+    flex: none;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    padding: 4px 9px;
+    border-radius: 999px;
+  }
+  .striscia-postuma button {
+    appearance: none;
+    margin-left: auto;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .striscia-postuma button:hover { border-color: var(--ink-soft); }
+  .striscia-postuma button:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: 2px; }
+
+  .coppia-campi { display: flex; gap: 8px; }
+  .coppia-campi input { flex: 1; min-width: 0; }
+  .anteprima.non-valida { color: var(--rabbia); }
+
+  /* ---- blocchi ABC ---- */
+  .oggi-ora {
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ingranaggio {
+    appearance: none;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink-soft);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: color .2s, border-color .2s, transform .12s;
+  }
+  .ingranaggio svg { width: 19px; height: 19px; display: block; }
+  .ingranaggio:hover { color: var(--ink); border-color: var(--ink-soft); }
+  .ingranaggio:active { transform: scale(.92); }
+  .ingranaggio:focus-visible { outline: 2px solid var(--emo); outline-offset: 2px; }
+
+  /* ---- blocchi ABC ---- */
+  .blocco { display: flex; flex-direction: column; gap: 7px; }
+
+  .etichetta {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .lettera {
+    display: grid;
+    place-items: center;
+    width: 21px; height: 21px;
+    flex: none;
+    border-radius: 6px;
+    background: color-mix(in oklab, var(--emo) 16%, var(--surface));
+    color: var(--emo);
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 0;
+    transition: background .5s ease, color .5s ease;
+  }
+  .etichetta .nota {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+
+  /* ---- griglia emozioni ---- */
+  .emozioni {
+    display: grid;
+    grid-template-columns: repeat(var(--col-stretto, 4), 1fr);
+    gap: 8px;
+  }
+  @media (min-width: 500px) {
+    .emozioni { grid-template-columns: repeat(var(--col-largo, 8), 1fr); gap: 6px; }
+  }
+
+  .emo-btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--r);
+    padding: 7px 2px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    cursor: pointer;
+    color: var(--ink-faint);
+    font: inherit;
+    transition: border-color .2s, background .2s, transform .12s, color .2s;
+  }
+  .emo-btn svg { width: 30px; height: 30px; display: block; }
+  .emo-btn .nome {
+    font-size: 10px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: .01em;
+    color: var(--ink-soft);
+    transition: color .2s;
+  }
+  .emo-btn:active { transform: scale(.94); }
+  .emo-btn:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
+  .emo-btn[aria-pressed="true"] {
+    border-color: var(--c);
+    background: color-mix(in oklab, var(--c) 13%, var(--surface));
+    color: var(--c);
+  }
+  .emo-btn[aria-pressed="true"] .nome { color: var(--c); font-weight: 600; }
+
+  /* ---- barra intensità ---- */
+  /* pan-y: in verticale la pagina scorre, in orizzontale si trascina l'intensità */
+  .intensita { display: flex; align-items: stretch; gap: 4px; touch-action: pan-y; }
+  .tacca {
+    appearance: none;
+    flex: 1;
+    min-width: 0;
+    /* ogni numero ha la sua gradazione: 1 una velatura chiara, 10 colore pieno.
+       La base è il bianco, non la superficie: nel tema scuro partire dal fondo
+       renderebbe le prime tacche quasi nere */
+    --forza: calc(9% + var(--g) * 9.1%);
+    border: 1px solid color-mix(in oklab, var(--emo) var(--forza), #fff);
+    background: color-mix(in oklab, var(--emo) var(--forza), #fff);
+    color: color-mix(in oklab, var(--emo) 55%, #1A1922);
+    font: inherit;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    padding: 9px 0 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background .25s, color .25s, border-color .25s, opacity .25s, transform .18s, box-shadow .18s;
+  }
+  .tacca.scura { color: #fff; }
+  .tacca:first-child { border-radius: var(--r) 4px 4px var(--r); }
+  .tacca:last-child  { border-radius: 4px var(--r) var(--r) 4px; }
+  .tacca:focus-visible { outline: 2px solid var(--emo); outline-offset: 2px; }
+  /* nessuna tacca viene spenta: la gradazione 1–10 resta sempre intatta,
+     la scelta si riconosce dall'anello */
+  .tacca.scelta {
+    font-weight: 700;
+    transform: translateY(-3px);
+    /* anello neutro: un anello a colore pieno farebbe sembrare carica anche una tacca chiara */
+    box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tacca.scelta { transform: none; }
+  }
+
+  .scala-note {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: -4px;
+  }
+
+  /* ---- campi ---- */
+  textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: var(--r);
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.4;
+    resize: none;
+    min-height: 42px;
+    overflow-y: auto;
+    transition: border-color .2s;
+  }
+  textarea::placeholder { color: var(--ink-faint); }
+  textarea:focus { outline: none; border-color: var(--emo); }
+
+  /* ---- salva ---- */
+  .salva {
+    appearance: none;
+    border: none;
+    width: 100%;
+    flex: none;
+    padding: 13px;
+    border-radius: var(--r);
+    background: var(--emo);
+    color: #fff;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    transition: transform .12s, opacity .2s, background .5s ease;
+  }
+  .salva:active { transform: scale(.985); }
+  .salva:disabled { opacity: .38; cursor: default; box-shadow: none; }
+  .salva:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+  /* ---- nav ---- */
+  .nav {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 3;
+    display: flex;
+    justify-content: center;
+    padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--paper) 58%, transparent);
+  }
+  .nav-inner {
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+  }
+  .nav button {
+    appearance: none;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    padding: 9px 22px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background .2s, color .2s;
+  }
+  .nav button[aria-current="true"] { background: var(--ink); color: var(--paper); }
+  .nav button:focus-visible { outline: 2px solid var(--emo); outline-offset: 2px; }
+
+  /* ---- brindisi ---- */
+  .brindisi {
+    position: fixed;
+    left: 50%;
+    bottom: 88px;
+    transform: translate(-50%, 12px);
+    z-index: 50;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .22s, transform .22s;
+    box-shadow: var(--shadow);
+  }
+  .brindisi.visibile { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---- storico ---- */
+  .riepilogo {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line-soft);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    overflow: hidden;
+  }
+  .riepilogo div { background: var(--surface); padding: 13px 14px; }
+  .riepilogo .n {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 26px;
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .riepilogo .k {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--ink-faint);
+    margin-top: 3px;
+  }
+
+  .grafico {
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--surface);
+    padding: 14px 12px 10px;
+  }
+  .grafico svg { width: 100%; height: auto; display: block; }
+
+  .conteggi { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 11px 5px 8px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklab, var(--c) 32%, var(--line));
+    background: color-mix(in oklab, var(--c) 9%, var(--surface));
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .chip b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--c); }
+  .pallino { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+
+  .giorno { display: flex; flex-direction: column; gap: 9px; }
+  .giorno > h3 {
+    margin: 0;
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 400;
+    font-size: 17px;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .giorno > h3::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+
+  .voce {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--c);
+    border-radius: 4px var(--r) var(--r) 4px;
+    background: var(--surface);
+    padding: 12px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .voce-capo { display: flex; align-items: center; gap: 9px; }
+  .voce-capo svg { width: 26px; height: 26px; flex: none; }
+  .voce-nome {
+    font-family: "Newsreader", Georgia, serif;
+    font-style: italic;
+    font-size: 19px;
+    font-weight: 400;
+    color: var(--c);
+  }
+  .voce-int {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--c) 12%, var(--surface-2));
+  }
+  .voce-ora {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .voce dl { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .voce dt {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: var(--ink-faint);
+  }
+  .voce dd { margin: 0; font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; }
+  .cestino {
+    appearance: none;
+    border: none;
+    background: none;
+    color: var(--ink-faint);
+    font: inherit;
+    font-size: 12px;
+    padding: 2px 0 0;
+    cursor: pointer;
+    align-self: flex-start;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .cestino:hover { color: var(--rabbia); }
+  .voce-comandi { display: flex; gap: 18px; }
+  .voce-comandi .ritocca:hover { color: var(--ink); }
+
+  .azioni { display: flex; flex-wrap: wrap; gap: 8px; }
+  .azioni button {
+    appearance: none;
+    flex: 1 1 160px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 12px 14px;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .azioni button:hover { border-color: var(--ink-soft); }
+  .azioni button:focus-visible { outline: 2px solid var(--emo); outline-offset: 2px; }
+  .azioni button.principale {
+    flex-basis: 100%;
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 600;
+    padding: 15px 14px;
+  }
+  .azioni button.principale:hover { border-color: var(--ink); }
+
+  .vuoto {
+    border: 1px dashed var(--line);
+    border-radius: var(--r);
+    padding: 30px 22px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 14.5px;
+  }
+  .vuoto p { margin: 0; }
+  .vuoto .titolo {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 20px;
+    font-weight: 300;
+    color: var(--ink);
+    margin-bottom: 5px;
+  }
+
+  .sync {
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sync::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    flex: none;
+  }
+  .sync[data-stato="ok"]::before { background: var(--calma); }
+
+  .via { display: none !important; }
+
+  /* ================= blocco con PIN ================= */
+  #blocco { display: none; }
+  :root[data-bloccato="1"] #blocco { display: flex; }
+
+  #blocco {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 26px 22px calc(26px + env(safe-area-inset-bottom));
+    background: var(--paper);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .blocco-marchio { display: flex; gap: -6px; margin-bottom: 2px; }
+  .blocco-marchio svg { width: 54px; height: 54px; display: block; }
+
+  .blocco-titolo {
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 300;
+    font-size: 26px;
+    text-align: center;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .blocco-sotto {
+    font-size: 14px;
+    color: var(--ink-soft);
+    text-align: center;
+    min-height: 21px;
+    text-wrap: balance;
+    margin: -10px 0 0;
+  }
+  .blocco-sotto.errore { color: var(--rabbia); }
+
+  .pin-punti { display: flex; gap: 15px; height: 15px; }
+  .pin-punti span {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.6px solid var(--ink-faint);
+    transition: background .14s, border-color .14s, transform .14s;
+  }
+  .pin-punti span.pieno {
+    background: var(--ink);
+    border-color: var(--ink);
+    transform: scale(1.12);
+  }
+  .pin-punti.sbaglia { animation: scuoti .42s ease; }
+  @keyframes scuoti {
+    10%, 90% { transform: translateX(-3px); }
+    30%, 70% { transform: translateX(6px); }
+    50%      { transform: translateX(-6px); }
+  }
+
+  .tastierino {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    width: 100%;
+    max-width: 280px;
+  }
+  .tastierino button {
+    appearance: none;
+    aspect-ratio: 1;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 27px;
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background .14s, transform .1s, border-color .14s;
+  }
+  .tastierino button:active { transform: scale(.93); background: var(--surface-2); }
+  .tastierino button:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: 2px; }
+  .tastierino button:disabled { opacity: .35; cursor: default; }
+  .tastierino button.muto {
+    border-color: transparent;
+    background: none;
+    font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .tastierino button.muto:active { background: none; }
+  .tastierino button.muto svg { width: 22px; height: 22px; display: block; margin: 0 auto; }
+
+  .blocco-impronta {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 11px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .blocco-impronta svg { width: 19px; height: 19px; color: var(--ink-soft); }
+  .blocco-impronta:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: 2px; }
+
+  .blocco-annulla {
+    appearance: none;
+    border: none;
+    background: none;
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 14px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .avviso-pin {
+    max-width: 34ch;
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ink-faint);
+  }
+
+  /* ================= modale "da quando ripartiamo" ================= */
+  .modale {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: color-mix(in oklab, var(--ink) 42%, transparent);
+    padding: 16px;
+    animation: sfuma .2s ease;
+  }
+  @keyframes sfuma { from { opacity: 0; } }
+
+  .modale .scheda {
+    width: 100%;
+    max-width: 460px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 22px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: var(--shadow);
+    animation: sali .26s cubic-bezier(.22,.75,.3,1);
+  }
+  @keyframes sali { from { transform: translateY(18px); opacity: .4; } }
+  @media (min-width: 560px) { .modale { align-items: center; } }
+
+  .modale h2 {
+    margin: 0;
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 300;
+    font-size: 25px;
+    letter-spacing: -.01em;
+  }
+  .modale p { margin: -8px 0 0; font-size: 14px; color: var(--ink-soft); }
+
+  .scorciatoie { display: flex; gap: 6px; }
+  .scorciatoie button {
+    appearance: none;
+    flex: 1;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    padding: 10px 6px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color .18s, background .18s;
+  }
+  .scorciatoie button[aria-pressed="true"] {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  .modale input[type="date"],
+  .modale input[type="time"],
+  .modale input[type="text"] {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 12px 13px;
+    font: inherit;
+    font-size: 16px;
+  }
+  .modale input[type="date"]:focus,
+  .modale input[type="time"]:focus,
+  .modale input[type="text"]:focus { outline: none; border-color: var(--ink-soft); }
+
+  /* ---- menu impostazioni ---- */
+  .menu { display: flex; flex-direction: column; gap: 1px; }
+  .voce-menu {
+    appearance: none;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    padding: 13px 15px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color .18s, background .18s;
+  }
+  .voce-menu:hover { border-color: var(--ink-soft); }
+  .voce-menu:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: 2px; }
+  .voce-menu-testo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .voce-menu-nome { font-size: 15px; font-weight: 500; }
+  .voce-menu-sotto { font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .voce-menu .freccia { margin-left: auto; color: var(--ink-faint); font-size: 20px; line-height: 1; }
+  .voce-menu.pericolo .voce-menu-nome { color: var(--rabbia); }
+  .voce-menu.pericolo:hover { border-color: var(--rabbia); }
+  .modale .menu-titolo {
+    margin: 14px 0 4px 2px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  /* il menu è cresciuto: sugli schermi bassi la scheda scorre */
+  #modale-impostazioni .scheda { max-height: calc(100dvh - 32px); overflow-y: auto; }
+
+  /* ---- travestimento ---- */
+  .anteprima-icone { display: flex; align-items: center; gap: 12px; }
+  .icona-app {
+    width: 46px;
+    height: 46px;
+    border-radius: 13px;
+    overflow: hidden;
+    flex: none;
+    display: block;
+  }
+  .icona-app svg { width: 100%; height: 100%; display: block; }
+  .freccia-icone { color: var(--ink-faint); font-size: 18px; }
+  .elenco-note {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+  }
+  .elenco-note li::marker { color: var(--ink-faint); }
+  .elenco-note .importante { color: var(--ink); }
+
+  /* ---- scelta delle emozioni attive ---- */
+  .lista-emozioni {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 44vh;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .riga-emo {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink-faint);
+    font: inherit;
+    text-align: left;
+    padding: 9px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color .18s, background .18s, color .18s;
+  }
+  .riga-emo svg { width: 28px; height: 28px; flex: none; display: block; }
+  .riga-emo .riga-nome { font-size: 15px; color: var(--ink-soft); }
+  .riga-emo:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
+  .riga-emo[aria-pressed="true"] {
+    border-color: color-mix(in oklab, var(--c) 42%, var(--line));
+    background: color-mix(in oklab, var(--c) 9%, var(--surface));
+    color: var(--c);
+  }
+  .riga-emo[aria-pressed="true"] .riga-nome { color: var(--ink); font-weight: 500; }
+
+  .interruttore {
+    margin-left: auto;
+    flex: none;
+    width: 40px;
+    height: 23px;
+    border-radius: 999px;
+    background: var(--line);
+    position: relative;
+    transition: background .2s;
+  }
+  .interruttore::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    transition: transform .2s cubic-bezier(.22,.75,.3,1);
+  }
+  .riga-emo[aria-pressed="true"] .interruttore { background: var(--c); }
+  .riga-emo[aria-pressed="true"] .interruttore::after { transform: translateX(17px); }
+  .voce-menu[aria-pressed="true"] .interruttore { background: var(--calma); }
+  .voce-menu[aria-pressed="true"] .interruttore::after { transform: translateX(17px); }
+  .riga-emo.sola .interruttore { opacity: .5; }
+
+  .anteprima {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin-top: -4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .modale-azioni { display: flex; gap: 8px; margin-top: 4px; }
+  .modale-azioni button {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    padding: 13px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .modale-azioni .avvia {
+    flex: 1;
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 600;
+  }
+  .modale-azioni .avvia:disabled { opacity: .4; cursor: default; }
+  .modale-azioni .avvia.pericolo { border-color: var(--rabbia); background: var(--rabbia); color: #fff; }
+
+  /* ================= rassegna a schermo intero ================= */
+  .rassegna {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--paper);
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #rass-sfondo, #rass-bolle {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  #rass-sfondo { background: var(--paper); }
+
+  .rass-testa,
+  .rass-piede {
+    position: relative;
+    z-index: 2;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+  }
+  .rass-testa { padding-top: calc(16px + env(safe-area-inset-top)); }
+  .rass-piede { padding-bottom: calc(18px + env(safe-area-inset-bottom)); justify-content: center; }
+
+  .rass-passo {
+    margin: 0 auto;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .rass-chiudi {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .rass-indietro {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .rass-indietro:disabled { opacity: .35; cursor: default; }
+
+  .rass-barra {
+    position: relative;
+    z-index: 2;
+    flex: none;
+    height: 2px;
+    margin: 0 18px;
+    background: var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .rass-barra i {
+    display: block;
+    height: 100%;
+    background: var(--emo);
+    border-radius: 2px;
+    transition: width .42s cubic-bezier(.22,.75,.3,1), background .42s ease;
+  }
+
+  .rass-corpo {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 20px;
+    padding: 24px 22px;
+    max-width: 620px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .rass-corpo.entra { animation: entra .42s cubic-bezier(.22,.75,.3,1); }
+  @keyframes entra { from { opacity: 0; transform: translateY(14px); } }
+
+  .rass-quando {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 16px;
+    font-weight: 300;
+    color: var(--ink-soft);
+    text-align: center;
+  }
+  .rass-volto { display: flex; justify-content: center; color: var(--emo); }
+  .rass-volto svg { width: 96px; height: 96px; }
+  .rass-nome {
+    font-family: "Newsreader", Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(38px, 13vw, 62px);
+    line-height: 1;
+    text-align: center;
+    color: var(--emo);
+    text-wrap: balance;
+  }
+
+  .rass-scala { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .rass-tacche { display: flex; gap: 4px; }
+  .rass-tacche span {
+    width: 16px;
+    height: 8px;
+    border-radius: 2px;
+    background: color-mix(in oklab, var(--emo) 16%, var(--paper));
+  }
+  .rass-tacche span.viva { background: var(--emo); }
+  .rass-livello {
+    font-size: 12.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rass-note { display: flex; flex-direction: column; gap: 10px; }
+  .rass-nota {
+    background: color-mix(in oklab, var(--surface) 78%, transparent);
+    border: 1px solid color-mix(in oklab, var(--emo) 18%, var(--line));
+    border-radius: var(--r);
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .rass-nota dt {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--ink-faint);
+  }
+  .rass-nota dd {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+  .rass-muta {
+    text-align: center;
+    font-size: 14px;
+    color: var(--ink-faint);
+    font-style: italic;
+    font-family: "Newsreader", Georgia, serif;
+  }
+
+  .rass-invito {
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    letter-spacing: .04em;
+  }
+  .rass-invito b { font-weight: 600; color: var(--ink-soft); }
+
+  .rass-fine { text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+  .rass-fine .titolo {
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 300;
+    font-size: 30px;
+  }
+  .rass-fine p { margin: 0; color: var(--ink-soft); font-size: 15px; max-width: 34ch; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, .bolla.cresci { animation: none !important; transition-duration: .01ms !important; }
+  }
+</style>
+
+<div id="sfondo"></div>
+<div id="bolle"></div>
+
+<main class="guscio">
+  <!-- ======== OGGI ======== -->
+  <section id="vista-oggi">
+    <header class="testata">
+      <button type="button" class="oggi-data" id="data-oggi" aria-label="Cambia il momento della registrazione">
+        <span id="data-oggi-testo">&nbsp;</span>
+      </button>
+      <div class="testata-destra">
+        <span class="oggi-ora" id="ora-oggi">&nbsp;</span>
+        <button type="button" class="ingranaggio" data-impostazioni aria-label="Impostazioni"></button>
+      </div>
+    </header>
+
+    <div class="striscia-postuma via" id="striscia-postuma">
+      <span class="badge-postuma" id="badge-postuma">voce postuma</span>
+      <span id="testo-postuma"></span>
+      <button type="button" id="torna-adesso">Torna a oggi</button>
+    </div>
+
+    <div class="blocco">
+      <div class="etichetta"><span class="lettera">B</span> Emozione <span class="nota" id="nota-emo">scegline una</span></div>
+      <div class="emozioni" id="griglia-emozioni" role="group" aria-label="Emozione provata"></div>
+    </div>
+
+    <div class="blocco">
+      <div class="etichetta">Intensità <span class="nota" id="nota-int">5 su 10</span></div>
+      <div class="intensita" id="barra-intensita" role="group" aria-label="Intensità da 1 a 10"></div>
+      <div class="scala-note"><span>appena percepita</span><span>travolgente</span></div>
+    </div>
+
+    <div class="blocco abc">
+      <div class="etichetta"><span class="lettera">A</span> Situazione</div>
+      <textarea id="campo-a" placeholder="Dov'ero, con chi, cosa è successo…"></textarea>
+    </div>
+
+    <div class="blocco abc">
+      <div class="etichetta"><span class="lettera">B</span> Pensiero</div>
+      <textarea id="campo-b" placeholder="Cosa mi è passato per la testa in quel momento…"></textarea>
+    </div>
+
+    <div class="blocco abc">
+      <div class="etichetta"><span class="lettera">C</span> Conseguenza</div>
+      <textarea id="campo-c" placeholder="Cosa ho fatto, cosa ho sentito nel corpo…"></textarea>
+    </div>
+
+    <button class="salva" id="btn-salva" disabled>Registra</button>
+  </section>
+
+  <!-- ======== STORICO ======== -->
+  <section id="vista-storico" class="via">
+    <header class="testata">
+      <div class="oggi-data">Storico</div>
+      <div class="testata-destra">
+        <span class="oggi-ora" id="conta-voci">&nbsp;</span>
+        <button type="button" class="ingranaggio" data-impostazioni aria-label="Impostazioni"></button>
+      </div>
+    </header>
+    <div id="storico-corpo" style="display:flex;flex-direction:column;gap:22px;margin-top:20px"></div>
+  </section>
+</main>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <button id="tab-oggi" aria-current="true">Oggi</button>
+    <button id="tab-storico" aria-current="false">Storico</button>
+  </div>
+</nav>
+
+<!-- ======== quando è successo ======== -->
+<div class="modale via" id="modale-quando" role="dialog" aria-modal="true" aria-labelledby="titolo-quando">
+  <div class="scheda">
+    <h2 id="titolo-quando">Quando è successo?</h2>
+    <p>Per registrare un’emozione di un momento già passato.</p>
+    <div class="scorciatoie" id="scorciatoie-quando">
+      <button type="button" data-giorni="-1">Adesso</button>
+      <button type="button" data-giorni="1">Ieri</button>
+      <button type="button" data-giorni="2">Due giorni fa</button>
+    </div>
+    <div class="coppia-campi">
+      <input type="date" id="quando-data" aria-label="Giorno">
+      <input type="time" id="quando-ora" aria-label="Ora">
+    </div>
+    <div class="anteprima" id="anteprima-quando">&nbsp;</div>
+    <div class="modale-azioni">
+      <button type="button" id="annulla-quando">Annulla</button>
+      <button type="button" class="avvia" id="conferma-quando">Conferma</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== conferma eliminazione ======== -->
+<div class="modale via" id="modale-elimina" role="dialog" aria-modal="true" aria-labelledby="titolo-elimina">
+  <div class="scheda">
+    <h2 id="titolo-elimina">Eliminare la voce?</h2>
+    <p id="testo-elimina"></p>
+    <div class="modale-azioni">
+      <button type="button" id="annulla-elimina">Annulla</button>
+      <button type="button" class="avvia pericolo" id="conferma-elimina">Elimina</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== blocco con PIN ======== -->
+<div id="blocco" role="dialog" aria-modal="true" aria-label="Diario bloccato">
+  <div class="blocco-marchio" id="blocco-marchio"></div>
+  <h2 class="blocco-titolo" id="blocco-titolo">Diario delle Emozioni</h2>
+  <p class="blocco-sotto" id="blocco-sotto">Inserisci il PIN</p>
+  <div class="pin-punti" id="pin-punti" aria-hidden="true"></div>
+  <div class="tastierino" id="tastierino"></div>
+  <button type="button" class="blocco-impronta via" id="btn-impronta"></button>
+  <button type="button" class="blocco-annulla via" id="btn-annulla-pin">Annulla</button>
+  <p class="avviso-pin via" id="avviso-pin">
+    Il PIN non si può recuperare. Se lo dimentichi l’unico modo per rientrare è
+    reinstallare l’app, e le voci registrate andrebbero perse: tieni un backup.
+  </p>
+</div>
+
+<!-- ======== impostazioni ======== -->
+<div class="modale via" id="modale-impostazioni" role="dialog" aria-modal="true" aria-labelledby="titolo-impostazioni">
+  <div class="scheda">
+    <h2 id="titolo-impostazioni">Impostazioni</h2>
+    <div class="menu">
+      <button type="button" class="voce-menu" id="apri-emozioni">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Emozioni attive</span>
+          <span class="voce-menu-sotto" id="sommario-emozioni">&nbsp;</span>
+        </span>
+        <span class="freccia" aria-hidden="true">›</span>
+      </button>
+
+      <button type="button" class="voce-menu" id="commuta-blocco" aria-pressed="false">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Blocco con PIN</span>
+          <span class="voce-menu-sotto" id="sommario-blocco">spento</span>
+        </span>
+        <span class="interruttore" aria-hidden="true"></span>
+      </button>
+
+      <button type="button" class="voce-menu via" id="commuta-impronta" aria-pressed="false">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Sblocco con impronta</span>
+          <span class="voce-menu-sotto">più rapido del PIN, che resta la chiave</span>
+        </span>
+        <span class="interruttore" aria-hidden="true"></span>
+      </button>
+
+      <button type="button" class="voce-menu via" id="cambia-pin">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Cambia PIN</span>
+          <span class="voce-menu-sotto">serve prima quello attuale</span>
+        </span>
+        <span class="freccia" aria-hidden="true">›</span>
+      </button>
+
+      <button type="button" class="voce-menu via" id="commuta-mimetico" aria-pressed="false">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Travestimento</span>
+          <span class="voce-menu-sotto" id="sommario-mimetico">nella home appare come app di sconti</span>
+        </span>
+        <span class="interruttore" aria-hidden="true"></span>
+      </button>
+
+      <p class="menu-titolo">I tuoi dati</p>
+
+      <button type="button" class="voce-menu" id="esporta-dati">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Esporta i dati</span>
+          <span class="voce-menu-sotto">un file da portare sul nuovo telefono</span>
+        </span>
+        <span class="freccia" aria-hidden="true">›</span>
+      </button>
+
+      <button type="button" class="voce-menu" id="importa-dati">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Importa i dati</span>
+          <span class="voce-menu-sotto">da un file esportato prima</span>
+        </span>
+        <span class="freccia" aria-hidden="true">›</span>
+      </button>
+
+      <button type="button" class="voce-menu pericolo" id="cancella-tutto">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Cancella tutti i dati</span>
+          <span class="voce-menu-sotto">voci, PIN e preferenze</span>
+        </span>
+        <span class="freccia" aria-hidden="true">›</span>
+      </button>
+
+      <p class="menu-titolo via" id="titolo-app">App</p>
+
+      <button type="button" class="voce-menu via" id="cerca-aggiornamenti">
+        <span class="voce-menu-testo">
+          <span class="voce-menu-nome">Cerca aggiornamenti</span>
+          <span class="voce-menu-sotto" id="sommario-aggiornamenti">&nbsp;</span>
+        </span>
+        <span class="freccia" aria-hidden="true">›</span>
+      </button>
+    </div>
+    <input type="file" id="file-importa" accept=".json,application/json" hidden>
+    <div class="sync" id="sync">Salvato su questo dispositivo</div>
+    <div class="modale-azioni">
+      <button type="button" class="avvia" id="chiudi-impostazioni">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== esportazione ======== -->
+<div class="modale via" id="modale-esporta" role="dialog" aria-modal="true" aria-labelledby="titolo-esporta">
+  <div class="scheda">
+    <h2 id="titolo-esporta">Esportare i dati?</h2>
+    <p id="testo-esporta"></p>
+    <ul class="elenco-note">
+      <li class="importante">Il file non è protetto dal PIN: chi lo apre legge tutto il diario.</li>
+      <li>Spostalo sul nuovo telefono e, a importazione fatta, cancellalo da Download.</li>
+      <li>Sul nuovo telefono: Impostazioni › Importa i dati.</li>
+    </ul>
+    <div class="modale-azioni">
+      <button type="button" id="annulla-esporta">Annulla</button>
+      <button type="button" class="avvia" id="conferma-esporta">Esporta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== importazione ======== -->
+<div class="modale via" id="modale-importa" role="dialog" aria-modal="true" aria-labelledby="titolo-importa">
+  <div class="scheda">
+    <h2 id="titolo-importa">Importare i dati?</h2>
+    <p id="testo-importa"></p>
+    <ul class="elenco-note">
+      <li>Le voci già presenti su questo telefono restano: le due raccolte si uniscono.</li>
+      <li>Se una voce è in entrambe, vince la versione modificata più di recente.</li>
+    </ul>
+    <div class="modale-azioni">
+      <button type="button" id="annulla-importa">Annulla</button>
+      <button type="button" class="avvia" id="conferma-importa">Importa</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== cancellazione totale, primo passo ======== -->
+<div class="modale via" id="modale-cancella" role="dialog" aria-modal="true" aria-labelledby="titolo-cancella">
+  <div class="scheda">
+    <h2 id="titolo-cancella">Cancellare tutti i dati?</h2>
+    <p id="testo-cancella"></p>
+    <ul class="elenco-note">
+      <li>Spariscono tutte le voci, il PIN e la scelta delle emozioni attive.</li>
+      <li class="importante">Non si potrà tornare indietro. Se vuoi tenerne una copia, esporta prima i dati.</li>
+    </ul>
+    <div class="modale-azioni">
+      <button type="button" id="annulla-cancella">Annulla</button>
+      <button type="button" class="avvia pericolo" id="avanti-cancella">Continua</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== cancellazione totale, conferma definitiva ======== -->
+<div class="modale via" id="modale-cancella-2" role="dialog" aria-modal="true" aria-labelledby="titolo-cancella-2">
+  <div class="scheda">
+    <h2 id="titolo-cancella-2">Ultima conferma</h2>
+    <p>Per cancellare davvero tutto scrivi <b>CANCELLA</b> qui sotto.</p>
+    <input type="text" id="parola-cancella" autocomplete="off" autocapitalize="characters"
+           spellcheck="false" aria-label="Scrivi CANCELLA per confermare">
+    <div class="modale-azioni">
+      <button type="button" id="annulla-cancella-2">Annulla</button>
+      <button type="button" class="avvia pericolo" id="conferma-cancella" disabled>Cancella tutto</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== aggiornamento disponibile ======== -->
+<div class="modale via" id="modale-aggiorna" role="dialog" aria-modal="true" aria-labelledby="titolo-aggiorna">
+  <div class="scheda">
+    <h2 id="titolo-aggiorna">C’è una versione nuova</h2>
+    <p id="testo-aggiorna"></p>
+    <ul class="elenco-note">
+      <li>Il file si scarica dal browser: aprilo dalle notifiche o da Download per installarlo.</li>
+      <li>Android può chiedere di consentire l’installazione da quella app: è normale.</li>
+      <li>Le tue voci, il PIN e le preferenze restano dove sono.</li>
+    </ul>
+    <div class="modale-azioni">
+      <button type="button" id="annulla-aggiorna">Più tardi</button>
+      <button type="button" class="avvia" id="conferma-aggiorna">Scarica</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== travestimento da app di sconti ======== -->
+<div class="modale via" id="modale-mimetico" role="dialog" aria-modal="true" aria-labelledby="titolo-mimetico">
+  <div class="scheda">
+    <div class="anteprima-icone" aria-hidden="true">
+      <span class="icona-app" id="icona-diario-anteprima"></span>
+      <span class="freccia-icone">→</span>
+      <span class="icona-app sconti" id="icona-sconti-anteprima"></span>
+    </div>
+    <h2 id="titolo-mimetico">Travestire il diario?</h2>
+    <p>Nella home e nell’elenco delle app comparirà come <b>Sconti</b>, con un cartellino del prezzo. Dentro resta il tuo diario.</p>
+    <ul class="elenco-note">
+      <li id="nota-pin-mimetico"></li>
+      <li>Il collegamento sulla home può sparire: riaggiungilo dall’elenco delle app, cercando «Sconti».</li>
+      <li>Al cambio l’app può chiudersi da sola: riaprila con la nuova icona.</li>
+      <li>Nelle impostazioni di sistema di Android il nome resta «Diario Emozioni».</li>
+    </ul>
+    <div class="modale-azioni">
+      <button type="button" id="annulla-mimetico">Annulla</button>
+      <button type="button" class="avvia" id="conferma-mimetico">Travesti</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== quali emozioni mostrare ======== -->
+<div class="modale via" id="modale-emozioni" role="dialog" aria-modal="true" aria-labelledby="titolo-emozioni">
+  <div class="scheda">
+    <h2 id="titolo-emozioni">Emozioni attive</h2>
+    <p>Quelle spente spariscono dalla schermata Oggi. Le registrazioni già fatte restano nello storico.</p>
+    <div class="lista-emozioni" id="lista-emozioni"></div>
+    <div class="modale-azioni">
+      <button type="button" id="indietro-emozioni">Indietro</button>
+      <button type="button" class="avvia" id="fatto-emozioni">Fatto</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== da quale data ripartire ======== -->
+<div class="modale via" id="modale-data" role="dialog" aria-modal="true" aria-labelledby="titolo-modale">
+  <div class="scheda">
+    <h2 id="titolo-modale">Da quando ripartiamo?</h2>
+    <p>Scegli il giorno da cui iniziare la rilettura insieme.</p>
+    <div class="scorciatoie" id="scorciatoie">
+      <button type="button" data-giorni="7">7 giorni</button>
+      <button type="button" data-giorni="30">30 giorni</button>
+      <button type="button" data-giorni="0">Dall’inizio</button>
+    </div>
+    <input type="date" id="data-da" aria-label="Giorno di partenza">
+    <div class="anteprima" id="anteprima-conteggio">&nbsp;</div>
+    <div class="modale-azioni">
+      <button type="button" id="btn-annulla">Annulla</button>
+      <button type="button" class="avvia" id="btn-avvia">Inizia</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======== rassegna a schermo intero ======== -->
+<div class="rassegna via" id="rassegna" role="dialog" aria-modal="true" aria-label="Rilettura del diario">
+  <div id="rass-sfondo"></div>
+  <div id="rass-bolle"></div>
+  <header class="rass-testa">
+    <button type="button" class="rass-indietro" id="rass-indietro">Indietro</button>
+    <span class="rass-passo" id="rass-passo"></span>
+    <button type="button" class="rass-chiudi" id="rass-chiudi">Chiudi</button>
+  </header>
+  <div class="rass-barra"><i id="rass-avanzamento" style="width:0"></i></div>
+  <div class="rass-corpo" id="rass-corpo" aria-live="polite"></div>
+  <footer class="rass-piede">
+    <span class="rass-invito" id="rass-invito"><b>Due tocchi</b> per la prossima</span>
+  </footer>
+</div>
+
+<div class="brindisi" id="brindisi" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------ *
+   *  Emozioni: nome, tinta, volto                                       *
+   * ------------------------------------------------------------------ */
+  var T = 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+  var testa = '<circle cx="24" cy="24" r="18.5" ' + T + '/>';
+
+  var EMOZIONI = [
+    { k: "gioia",     nome: "Gioia",     v: "--gioia",
+      volto: '<path d="M16 20.5c.9-1.6 3.1-1.6 4 0" ' + T + '/><path d="M28 20.5c.9-1.6 3.1-1.6 4 0" ' + T + '/><path d="M15.5 27.5c2 4.2 5.1 6.3 8.5 6.3s6.5-2.1 8.5-6.3" ' + T + '/>' },
+    { k: "calma",     nome: "Calma",     v: "--calma",
+      volto: '<path d="M16 21.5h4" ' + T + '/><path d="M28 21.5h4" ' + T + '/><path d="M18 29c1.7 1.9 3.7 2.8 6 2.8s4.3-.9 6-2.8" ' + T + '/>' },
+    { k: "tristezza", nome: "Tristezza", v: "--tristezza",
+      volto: '<path d="M15.5 18.5c1.4-1.1 3-1.4 4.6-.8" ' + T + '/><path d="M32.5 18.5c-1.4-1.1-3-1.4-4.6-.8" ' + T + '/><circle cx="18.2" cy="23" r="1.5" fill="currentColor" stroke="none"/><circle cx="29.8" cy="23" r="1.5" fill="currentColor" stroke="none"/><path d="M18 32.5c1.7-2.2 3.7-3.3 6-3.3s4.3 1.1 6 3.3" ' + T + '/>' },
+    { k: "paura",     nome: "Paura",     v: "--paura",
+      volto: '<path d="M15 18.2c1.2-1.7 3-2.4 4.9-2" ' + T + '/><path d="M33 18.2c-1.2-1.7-3-2.4-4.9-2" ' + T + '/><circle cx="18.4" cy="23.6" r="2.6" ' + T + '/><circle cx="29.6" cy="23.6" r="2.6" ' + T + '/><ellipse cx="24" cy="32" rx="3.4" ry="2.6" ' + T + '/>' },
+    { k: "ansia",     nome: "Ansia",     v: "--ansia",
+      volto: '<path d="M15.2 19.4Q17.8 17.1 20.6 17.6" ' + T + '/><path d="M32.8 19.4Q30.2 17.1 27.4 17.6" ' + T + '/><circle cx="18.6" cy="23.6" r="2" ' + T + '/><circle cx="29.4" cy="23.6" r="2" ' + T + '/><path d="M17.4 31.4l2.2-1.7 2.2 1.7 2.2-1.7 2.2 1.7 2.2-1.7 2.2 1.7" ' + T + '/><path d="M35.4 11.6c.9 1.3 1.4 2.2 1.4 2.8a1.4 1.4 0 0 1-2.8 0c0-.6.5-1.5 1.4-2.8Z" ' + T + ' opacity=".7"/>' },
+    { k: "rabbia",    nome: "Rabbia",    v: "--rabbia",
+      volto: '<path d="M15.4 17.6 20.6 21" ' + T + '/><path d="M32.6 17.6 27.4 21" ' + T + '/><circle cx="18.4" cy="24.6" r="1.5" fill="currentColor" stroke="none"/><circle cx="29.6" cy="24.6" r="1.5" fill="currentColor" stroke="none"/><path d="M17.6 32.4c1.9-1.6 3.9-2.4 6.4-2.4s4.5.8 6.4 2.4" ' + T + '/>' },
+    { k: "sorpresa",  nome: "Sorpresa",  v: "--sorpresa",
+      volto: '<path d="M14.8 17.4c1.4-1.9 3.3-2.7 5.4-2.4" ' + T + '/><path d="M33.2 17.4c-1.4-1.9-3.3-2.7-5.4-2.4" ' + T + '/><circle cx="18.4" cy="23.2" r="2.2" ' + T + '/><circle cx="29.6" cy="23.2" r="2.2" ' + T + '/><circle cx="24" cy="31.4" r="3.4" ' + T + '/>' },
+    { k: "disgusto",  nome: "Disgusto",  v: "--disgusto",
+      volto: '<path d="M15.8 21.8c1.5-1.4 3-1.4 4.5 0" ' + T + '/><path d="M27.6 22.2h4.6" ' + T + '/><path d="M17.4 30.6c1.6 0 1.6-2 3.2-2s1.6 2 3.2 2 1.6-2 3.2-2 1.6 2 3.2 2" ' + T + '/>' },
+    { k: "vergogna",  nome: "Vergogna",  v: "--vergogna",
+      volto: '<path d="M16.2 23.6c1.4 1.3 2.9 1.8 4.4 1.5" ' + T + '/><path d="M31.8 23.6c-1.4 1.3-2.9 1.8-4.4 1.5" ' + T + '/><path d="M20.4 31.6h7.2" ' + T + '/><path d="M14.4 28.4c.7.9 1.6 1.4 2.6 1.6" ' + T + ' opacity=".55"/><path d="M33.6 28.4c-.7.9-1.6 1.4-2.6 1.6" ' + T + ' opacity=".55"/>' },
+    { k: "colpa",     nome: "Colpa",     v: "--colpa",
+      volto: '<path d="M15.4 19.2Q17.9 17.2 20.6 17.8" ' + T + '/><path d="M32.6 19.2Q30.1 17.2 27.4 17.8" ' + T + '/><circle cx="18.4" cy="23.8" r="1.5" fill="currentColor" stroke="none"/><circle cx="29.6" cy="23.8" r="1.5" fill="currentColor" stroke="none"/><path d="M18.4 31.8Q24 29.2 29.6 31.2" ' + T + '/>' }
+  ];
+
+  var PER_CHIAVE = {};
+  EMOZIONI.forEach(function (e) { PER_CHIAVE[e.k] = e; });
+
+  function iconaDi(e, px) {
+    return '<svg viewBox="0 0 48 48" width="' + px + '" height="' + px + '" aria-hidden="true">' + testa + e.volto + '</svg>';
+  }
+  function tinta(chiave) {
+    var e = PER_CHIAVE[chiave];
+    return e ? "var(" + e.v + ")" : "var(--idle)";
+  }
+
+  // ingranaggio: stesso tratto dei volti, otto denti attorno al mozzo
+  // ingranaggio: un'unica sagoma con otto denti trapezoidali e il foro centrale
+  var INGRANAGGIO = (function () {
+    var N = 8, R = 10, r = 7.3, cima = 0.17, base = 0.27;
+    var passo = Math.PI * 2 / N;
+    var p = function (ang, rad) {
+      return (12 + rad * Math.cos(ang)).toFixed(2) + " " + (12 + rad * Math.sin(ang)).toFixed(2);
+    };
+    var d = "";
+    for (var k = 0; k < N; k++) {
+      var a = k * passo - Math.PI / 2;
+      d += (k ? " L" : "M") + p(a - base, r) +
+           " L" + p(a - cima, R) + " L" + p(a + cima, R) + " L" + p(a + base, r) +
+           " A" + r + " " + r + " 0 0 1 " + p(a + passo - base, r);
+    }
+    return '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+           '<path d="' + d + ' Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>' +
+           '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+  })();
+
+  /* ---- quali emozioni compaiono nella schermata Oggi ---- */
+  var CHIAVE_ATTIVE = "diario-emozioni-attive-v1";
+  var attive = null;   // null = tutte
+
+  function leggiAttive() {
+    try {
+      var g = localStorage.getItem(CHIAVE_ATTIVE);
+      if (!g) return null;
+      var a = JSON.parse(g);
+      if (!Array.isArray(a)) return null;
+      a = a.filter(function (k) { return PER_CHIAVE[k]; });
+      return a.length ? a : null;
+    } catch (err) { return null; }
+  }
+
+  function scriviAttive() {
+    try {
+      if (attive) localStorage.setItem(CHIAVE_ATTIVE, JSON.stringify(attive));
+      else localStorage.removeItem(CHIAVE_ATTIVE);
+    } catch (err) { /* modalità privata */ }
+  }
+
+  function emozioniAttive() {
+    if (!attive) return EMOZIONI;
+    return EMOZIONI.filter(function (e) { return attive.indexOf(e.k) >= 0; });
+  }
+
+  function eAttiva(k) { return !attive || attive.indexOf(k) >= 0; }
+
+  /* ------------------------------------------------------------------ *
+   *  Archivio: locale sempre, remoto quando c'è                         *
+   * ------------------------------------------------------------------ */
+  var CHIAVE_LS = "diario-emozioni-v1";
+  var voci = {};            // id -> voce
+  var db = null;            // capability db, se disponibile
+  var mesiToccati = {};
+
+  function leggiLocale() {
+    try {
+      var g = localStorage.getItem(CHIAVE_LS);
+      return g ? JSON.parse(g) : {};
+    } catch (err) { return {}; }
+  }
+  function scriviLocale() {
+    try { localStorage.setItem(CHIAVE_LS, JSON.stringify(voci)); } catch (err) { /* modalità privata */ }
+  }
+  function mesediv(v) { return v.ts.slice(0, 7); }
+
+  function fondi(altre) {
+    var cambiato = false;
+    Object.keys(altre).forEach(function (id) {
+      var nuova = altre[id], vecchia = voci[id];
+      if (!vecchia || (nuova.up || 0) > (vecchia.up || 0)) { voci[id] = nuova; cambiato = true; }
+    });
+    return cambiato;
+  }
+
+  function segnaSync(stato, testo) {
+    var el = document.getElementById("sync");
+    el.dataset.stato = stato;
+    el.textContent = testo;
+  }
+
+  async function avviaDb() {
+    if (window.DiarioAndroid) { segnaSync("ok", "Salvato sul telefono, resta privato"); return; }
+    try { db = await window.claude.use("db"); } catch (err) { db = null; }
+    if (!db) { segnaSync("locale", "Salvato su questo dispositivo"); return; }
+    try {
+      var snap = await db.collection("diario").get();
+      var remote = {};
+      snap.docs.forEach(function (d) {
+        var corpo = d.data() || {};
+        var e = corpo.voci || {};
+        Object.keys(e).forEach(function (id) { remote[id] = e[id]; });
+      });
+      var localOnly = {};
+      Object.keys(voci).forEach(function (id) {
+        if (!remote[id] || (voci[id].up || 0) > (remote[id].up || 0)) localOnly[id] = voci[id];
+      });
+      if (fondi(remote)) { scriviLocale(); disegna(); }
+      for (var id in localOnly) { await spingi(localOnly[id]); }
+      segnaSync("ok", "Sincronizzato — disponibile su tutti i tuoi dispositivi");
+    } catch (err) {
+      segnaSync("locale", "Salvato su questo dispositivo (sincronia non disponibile)");
+    }
+  }
+
+  async function spingi(voce) {
+    if (!db) return;
+    var mese = mesediv(voce);
+    var rif = db.collection("diario").doc(mese);
+    var corpo = {}; corpo[voce.id] = voce;
+    try {
+      await rif.update({ voci: corpo });
+    } catch (err) {
+      try { await rif.set({ mese: mese, voci: corpo }); } catch (err2) { /* resta in locale */ }
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  Stato del modulo di oggi                                           *
+   * ------------------------------------------------------------------ */
+  var scelta = null;
+  var intensita = 5;
+  var inModifica = null;   // id della voce che il modulo sta modificando
+
+  function applicaTinta(chiave) {
+    document.documentElement.style.setProperty("--emo", tinta(chiave));
+  }
+
+  /* -- bolla che allaga lo sfondo -------------------------------------- */
+  // con l'intensità (1–10) lo sfondo si fa più tenue o più carico; 5 è il tono di base
+  function lavatura(chiave, forte, int) {
+    var fattore = int ? (0.4 + (int - 1) * 0.15).toFixed(2) : "1";
+    return "color-mix(in oklab, " + tinta(chiave) +
+           " calc(var(" + (forte ? "--wash-forte" : "--wash") + ") * " + fattore + "), var(--paper))";
+  }
+
+  function aggiornaSfondo() {
+    if (!scelta) return;
+    var colore = lavatura(scelta, false, intensita);
+    document.getElementById("sfondo").style.background = colore;   // in dissolvenza
+    // una bolla ancora in corsa prende subito la nuova tonalità, e la consegna allo sfondo
+    document.querySelectorAll("#bolle .bolla").forEach(function (b) {
+      b.style.background = colore;
+      b.colore = colore;
+    });
+  }
+
+  // sotto una bolla lo sfondo cambia di colpo: la bolla lo copre già, e una
+  // dissolvenza farebbe riaffiorare per un attimo il colore vecchio
+  function tingiSubito(sfondo, colore) {
+    sfondo.style.transition = "none";
+    sfondo.style.background = colore;
+    void sfondo.offsetWidth;
+    sfondo.style.transition = "";
+  }
+
+  // toglie le bolle in corsa, così nessuna ridipinge lo sfondo dopo un azzeramento
+  function fermaBolle(scatola) {
+    scatola._turno = (scatola._turno || 0) + 1;
+    scatola.innerHTML = "";
+  }
+
+  function allagaIn(sfondo, scatola, colore, x, y) {
+    var ridotto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (ridotto) { tingiSubito(sfondo, colore); return; }
+
+    var r = scatola.getBoundingClientRect();
+    var lx = x - r.left, ly = y - r.top;
+    var raggio = Math.hypot(Math.max(lx, r.width - lx), Math.max(ly, r.height - ly)) + 4;
+
+    var b = document.createElement("div");
+    b.className = "bolla";
+    b.style.cssText =
+      "left:" + (lx - raggio) + "px;top:" + (ly - raggio) + "px;" +
+      "width:" + (raggio * 2) + "px;height:" + (raggio * 2) + "px;background:" + colore + ";";
+    b.colore = colore;
+    scatola.appendChild(b);
+    void b.offsetWidth;
+    b.classList.add("cresci");
+
+    var turno = scatola._turno = (scatola._turno || 0) + 1;
+    var chiusa = false;
+    var chiudi = function () {
+      if (chiusa) return;   // animationend e il timeout di riserva: conta solo il primo
+      chiusa = true;
+      // decide il colore solo l'ultima bolla: una più vecchia che finisce dopo non lo sovrascrive
+      if (turno === scatola._turno) tingiSubito(sfondo, b.colore);
+      if (b.parentNode) b.parentNode.removeChild(b);
+    };
+    b.addEventListener("animationend", chiudi, { once: true });
+    setTimeout(chiudi, 900);
+  }
+
+  function allaga(chiave, x, y) {
+    allagaIn(document.getElementById("sfondo"), document.getElementById("bolle"),
+             lavatura(chiave, false, intensita), x, y);
+  }
+
+  /* -- griglia emozioni ------------------------------------------------ */
+
+  /** Quante colonne, fino a `massimo`, lasciando meno caselle vuote
+   *  possibile nell'ultima riga (a parità, la griglia più larga). */
+  function colonne(n, massimo) {
+    // prima il minor numero di righe (lo spazio verticale è prezioso),
+    // poi le distribuisco il più possibile alla pari: 9 → 5+4, 7 → 4+3
+    var righe = Math.ceil(Math.max(n, 1) / massimo);
+    return Math.ceil(Math.max(n, 1) / righe);
+  }
+
+  function costruisciEmozioni() {
+    var g = document.getElementById("griglia-emozioni");
+    var mostrate = emozioniAttive();
+    // la voce in modifica può avere un'emozione poi disattivata: la mostro lo stesso
+    if (inModifica && scelta && !eAttiva(scelta)) {
+      mostrate = EMOZIONI.filter(function (e) { return eAttiva(e.k) || e.k === scelta; });
+    }
+    g.innerHTML = "";
+    g.style.setProperty("--col-stretto", String(colonne(mostrate.length, 5)));
+    g.style.setProperty("--col-largo", String(Math.min(mostrate.length, 9)));
+
+    mostrate.forEach(function (e) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "emo-btn";
+      b.style.setProperty("--c", "var(" + e.v + ")");
+      b.setAttribute("aria-pressed", "false");
+      b.setAttribute("aria-label", e.nome);
+      b.dataset.k = e.k;
+      b.innerHTML = iconaDi(e, 34) + '<span class="nome">' + e.nome + "</span>";
+      b.addEventListener("click", function (ev) {
+        scelta = e.k;
+        applicaTinta(e.k);
+        var r = b.getBoundingClientRect();
+        allaga(e.k, r.left + r.width / 2, r.top + r.height / 2);
+        aggiornaModulo();
+      });
+      g.appendChild(b);
+    });
+  }
+
+  /* -- barra intensità -------------------------------------------------- */
+  function costruisciIntensita() {
+    var barra = document.getElementById("barra-intensita");
+    for (var i = 1; i <= 10; i++) {
+      (function (n) {
+        var t = document.createElement("button");
+        t.type = "button";
+        t.className = "tacca";
+        t.textContent = n;
+        t.style.setProperty("--g", n);
+        if (n >= 7) t.classList.add("scura");   // sulle gradazioni cariche il numero va in bianco
+        t.setAttribute("aria-label", "Intensità " + n);
+        t.addEventListener("click", function () { scegliIntensita(n); });
+        barra.appendChild(t);
+      })(i);
+    }
+
+    // trascinando il dito lungo la barra l'intensità segue, tacca per tacca
+    var trascina = false;
+    function daPunto(x) {
+      var r = barra.getBoundingClientRect();
+      scegliIntensita(Math.min(10, Math.max(1, Math.ceil((x - r.left) / r.width * 10))));
+    }
+    barra.addEventListener("pointerdown", function (ev) {
+      trascina = true;
+      try { barra.setPointerCapture(ev.pointerId); } catch (err) { /* niente cattura */ }
+      daPunto(ev.clientX);
+    });
+    barra.addEventListener("pointermove", function (ev) { if (trascina) daPunto(ev.clientX); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (tipo) {
+      barra.addEventListener(tipo, function () { trascina = false; });
+    });
+  }
+
+  function scegliIntensita(n) {
+    if (n === intensita) return;
+    intensita = n;
+    aggiornaModulo();
+    aggiornaSfondo();
+  }
+
+  function aggiornaModulo() {
+    document.querySelectorAll(".emo-btn").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.k === scelta));
+    });
+    var tacche = document.querySelectorAll(".tacca");
+    tacche.forEach(function (t, i) {
+      t.classList.toggle("scelta", i + 1 === intensita);
+      t.setAttribute("aria-pressed", String(i + 1 === intensita));
+    });
+    document.getElementById("nota-int").textContent = intensita + " su 10";
+    document.getElementById("nota-emo").textContent =
+      scelta ? PER_CHIAVE[scelta].nome : "scegline una";
+    document.getElementById("btn-salva").disabled = !scelta;
+  }
+
+  /* -- textarea che cresce --------------------------------------------- */
+  // i campi non crescono più col testo: occupano lo spazio disponibile
+  // e scorrono al loro interno, così la schermata resta ferma
+
+  /* ------------------------------------------------------------------ *
+   *  Salvataggio                                                        *
+   * ------------------------------------------------------------------ */
+  function brinda(testo) {
+    var el = document.getElementById("brindisi");
+    el.textContent = testo;
+    el.classList.add("visibile");
+    clearTimeout(brinda._t);
+    brinda._t = setTimeout(function () { el.classList.remove("visibile"); }, 2400);
+  }
+
+  document.getElementById("btn-salva").addEventListener("click", function () {
+    if (!scelta) return;
+    var ora = momento();
+    var voce = {
+      id: inModifica || Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      ts: locISO(ora),
+      emo: scelta,
+      int: intensita,
+      a: document.getElementById("campo-a").value.trim(),
+      b: document.getElementById("campo-b").value.trim(),
+      c: document.getElementById("campo-c").value.trim(),
+      up: Date.now()
+    };
+    voci[voce.id] = voce;
+    scriviLocale();
+    spingi(voce);
+    if (inModifica) {
+      chiudiModifica();
+      brinda("Modifica salvata · " + PER_CHIAVE[voce.emo].nome.toLowerCase() + " " + voce.int + "/10");
+      vaiA("storico");
+      return;
+    }
+    brinda("Registrato · " + PER_CHIAVE[scelta].nome.toLowerCase() + " " + intensita + "/10" +
+           (quando ? " · " + dataBreve(ora) : ""));
+    azzeraModulo();
+    disegna();
+  });
+
+  function azzeraModulo() {
+    scelta = null;
+    intensita = 5;
+    ["campo-a", "campo-b", "campo-c"].forEach(function (id) {
+      var ta = document.getElementById(id);
+      ta.value = "";
+      ta.scrollTop = 0;
+    });
+    applicaTinta(null);
+    fermaBolle(document.getElementById("bolle"));
+    document.getElementById("sfondo").style.background = "var(--paper)";
+    aggiornaModulo();
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  Date in italiano                                                   *
+   * ------------------------------------------------------------------ */
+  var GIORNI = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+  var MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+              "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+
+  function due(n) { return n < 10 ? "0" + n : "" + n; }
+  function locISO(d) {
+    return d.getFullYear() + "-" + due(d.getMonth() + 1) + "-" + due(d.getDate()) +
+           "T" + due(d.getHours()) + ":" + due(d.getMinutes());
+  }
+  function daISO(s) {
+    var p = s.split("T"), g = p[0].split("-"), o = (p[1] || "00:00").split(":");
+    return new Date(+g[0], +g[1] - 1, +g[2], +o[0], +o[1]);
+  }
+  function dataLunga(d) { return GIORNI[d.getDay()] + " " + d.getDate() + " " + MESI[d.getMonth()]; }
+  function dataBreve(d) { return d.getDate() + " " + MESI[d.getMonth()].slice(0, 3); }
+  function oraDi(d) { return due(d.getHours()) + ":" + due(d.getMinutes()); }
+
+  /* ---- il momento a cui verrà attribuita la prossima voce ---- */
+  var quando = null;   // null = adesso; altrimenti "AAAA-MM-GGTHH:MM"
+
+  var IC_CALENDARIO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+    'stroke-linecap="round" aria-hidden="true">' +
+    '<rect x="3.6" y="5.4" width="16.8" height="15" rx="2.4"/>' +
+    '<path d="M3.6 10.2h16.8"/><path d="M8.4 3.6v3.2"/><path d="M15.6 3.6v3.2"/></svg>';
+
+  function momento() { return quando ? daISO(quando) : new Date(); }
+
+  function scriviTestata() {
+    var d = momento();
+    var t = dataLunga(d);
+    document.getElementById("data-oggi-testo").textContent = t.charAt(0).toUpperCase() + t.slice(1);
+    document.getElementById("ora-oggi").textContent = oraDi(d);
+
+    var striscia = document.getElementById("striscia-postuma");
+    striscia.classList.toggle("via", !quando && !inModifica);
+    document.getElementById("badge-postuma").textContent = inModifica ? "modifica" : "voce postuma";
+    document.getElementById("torna-adesso").textContent = inModifica ? "Annulla" : "Torna a oggi";
+    if (inModifica) {
+      document.getElementById("testo-postuma").textContent =
+        "voce del " + d.getDate() + " " + MESI[d.getMonth()] + ", ore " + oraDi(d);
+    } else if (quando) {
+      document.getElementById("testo-postuma").textContent =
+        "registri per il " + d.getDate() + " " + MESI[d.getMonth()] + ", ore " + oraDi(d);
+    }
+
+    document.getElementById("btn-salva").textContent =
+      inModifica ? "Salva modifiche" : quando ? "Registra voce postuma" : "Registra";
+  }
+
+  /* ---- modifica di una voce già registrata ---- */
+  function apriModifica(e) {
+    inModifica = e.id;
+    quando = e.ts;
+    scelta = e.emo;
+    intensita = e.int;
+    [["campo-a", e.a], ["campo-b", e.b], ["campo-c", e.c]].forEach(function (r) {
+      var ta = document.getElementById(r[0]);
+      ta.value = r[1] || "";
+      ta.scrollTop = 0;
+    });
+    applicaTinta(e.emo);
+    document.getElementById("sfondo").style.background = lavatura(e.emo, false, e.int);
+    costruisciEmozioni();
+    aggiornaModulo();
+    scriviTestata();
+    vaiA("oggi");
+  }
+
+  /** Esce dalla modifica e riporta il modulo vuoto, datato adesso. */
+  function chiudiModifica() {
+    inModifica = null;
+    quando = null;
+    azzeraModulo();
+    costruisciEmozioni();
+    aggiornaModulo();
+    scriviTestata();
+  }
+
+  function annullaModifica() {
+    chiudiModifica();
+    vaiA("storico");
+    brinda("Modifica annullata");
+  }
+
+  /* ---- pannello di scelta del momento ---- */
+  function apriQuando() {
+    var d = momento();
+    var oggi = new Date();
+    var cinqueAnni = new Date();
+    cinqueAnni.setFullYear(cinqueAnni.getFullYear() - 5);
+
+    var campoData = document.getElementById("quando-data");
+    var campoOra = document.getElementById("quando-ora");
+    campoData.min = isoGiorno(cinqueAnni);
+    campoData.max = isoGiorno(oggi);
+    campoData.value = isoGiorno(d);
+    campoOra.value = oraDi(d);
+
+    segnaScorciatoieQuando(null);
+    valutaQuando();
+    document.getElementById("modale-quando").classList.remove("via");
+  }
+
+  function scegliGiorniFa(giorni) {
+    var campoData = document.getElementById("quando-data");
+    var campoOra = document.getElementById("quando-ora");
+    var d = new Date();
+    if (giorni > 0) d.setDate(d.getDate() - giorni);
+    campoData.value = isoGiorno(d);
+    campoOra.value = oraDi(d);          // "Adesso" riporta anche l'ora corrente
+    segnaScorciatoieQuando(giorni);
+    valutaQuando();
+  }
+
+  function segnaScorciatoieQuando(giorni) {
+    document.querySelectorAll("#scorciatoie-quando button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(Number(b.dataset.giorni) === giorni));
+    });
+  }
+
+  function candidatoQuando() {
+    var g = document.getElementById("quando-data").value;
+    if (!g) return null;
+    var o = document.getElementById("quando-ora").value || "00:00";
+    return g + "T" + o.slice(0, 5);
+  }
+
+  function valutaQuando() {
+    var iso = candidatoQuando();
+    var avviso = document.getElementById("anteprima-quando");
+    var conferma = document.getElementById("conferma-quando");
+
+    if (!iso) {
+      avviso.textContent = "Scegli un giorno";
+      avviso.classList.add("non-valida");
+      conferma.disabled = true;
+      return null;
+    }
+
+    var d = daISO(iso);
+    if (d.getTime() > Date.now() + 60000) {
+      avviso.textContent = "Il diario non registra nel futuro";
+      avviso.classList.add("non-valida");
+      conferma.disabled = true;
+      return null;
+    }
+
+    avviso.classList.remove("non-valida");
+    var t = dataLunga(d);
+    avviso.textContent = t.charAt(0).toUpperCase() + t.slice(1) + ", ore " + oraDi(d) +
+      (locISO(d) === locISO(new Date()) ? " — cioè adesso" : "");
+    conferma.disabled = false;
+    return iso;
+  }
+
+  function confermaQuando() {
+    var iso = valutaQuando();
+    if (!iso) return;
+    var d = daISO(iso);
+
+    // se combacia col minuto corrente, torniamo semplicemente al presente
+    quando = (locISO(d) === locISO(new Date())) ? null : iso;
+
+    document.getElementById("modale-quando").classList.add("via");
+    scriviTestata();
+    if (inModifica) { brinda("La voce sarà datata " + dataBreve(d) + ", " + oraDi(d)); return; }
+    brinda(quando ? "La prossima voce sarà datata " + dataBreve(d) + ", " + oraDi(d)
+                  : "Torni a registrare adesso");
+  }
+
+  function tornaAdesso() {
+    quando = null;
+    scriviTestata();
+    brinda("Torni a registrare adesso");
+  }
+
+  document.getElementById("data-oggi").insertAdjacentHTML("beforeend", IC_CALENDARIO);
+  document.getElementById("data-oggi").addEventListener("click", apriQuando);
+  document.getElementById("torna-adesso").addEventListener("click", function () {
+    if (inModifica) annullaModifica(); else tornaAdesso();
+  });
+  document.getElementById("annulla-quando").addEventListener("click", function () {
+    document.getElementById("modale-quando").classList.add("via");
+  });
+  document.getElementById("conferma-quando").addEventListener("click", confermaQuando);
+  document.querySelectorAll("#scorciatoie-quando button").forEach(function (b) {
+    b.addEventListener("click", function () { scegliGiorniFa(Number(b.dataset.giorni)); });
+  });
+  ["quando-data", "quando-ora"].forEach(function (id) {
+    document.getElementById(id).addEventListener("input", function () {
+      segnaScorciatoieQuando(null);
+      valutaQuando();
+    });
+  });
+  document.getElementById("modale-quando").addEventListener("click", function (ev) {
+    if (ev.target === this) this.classList.add("via");
+  });
+
+  /* ------------------------------------------------------------------ *
+   *  Storico                                                            *
+   * ------------------------------------------------------------------ */
+  function elenco() {
+    return Object.keys(voci)
+      .map(function (id) { return voci[id]; })
+      .filter(function (v) { return v && !v.del && PER_CHIAVE[v.emo]; })
+      .sort(function (x, y) { return x.ts < y.ts ? 1 : x.ts > y.ts ? -1 : 0; });
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function disegna() {
+    var v = elenco();
+    document.getElementById("conta-voci").textContent =
+      v.length === 0 ? "" : v.length + (v.length === 1 ? " voce" : " voci");
+
+    var corpo = document.getElementById("storico-corpo");
+    corpo.innerHTML = "";
+
+    if (v.length === 0) {
+      corpo.innerHTML =
+        '<div class="vuoto"><p class="titolo">Ancora nessuna voce</p>' +
+        "<p>Registra la prima emozione dalla scheda <b>Oggi</b>: bastano l’icona e l’intensità, il resto è facoltativo.</p></div>";
+      return;
+    }
+
+    corpo.appendChild(nodoRiepilogo(v));
+    corpo.appendChild(nodoGrafico(v));
+    corpo.appendChild(nodoConteggi(v));
+    corpo.appendChild(nodoAzioni());   // sopra la lista: raggiungibili senza scorrere
+
+    // raggruppa per giorno
+    var giorni = [], indice = {};
+    v.forEach(function (e) {
+      var g = e.ts.slice(0, 10);
+      if (!indice[g]) { indice[g] = []; giorni.push(g); }
+      indice[g].push(e);
+    });
+
+    giorni.forEach(function (g) {
+      var sez = document.createElement("section");
+      sez.className = "giorno";
+      var d = daISO(g + "T00:00");
+      var titolo = dataLunga(d);
+      sez.innerHTML = "<h3>" + esc(titolo.charAt(0).toUpperCase() + titolo.slice(1)) + "</h3>";
+      indice[g].forEach(function (e) { sez.appendChild(nodoVoce(e)); });
+      corpo.appendChild(sez);
+    });
+  }
+
+  function nodoRiepilogo(v) {
+    var box = document.createElement("div");
+    box.className = "riepilogo";
+    var media = v.reduce(function (s, e) { return s + e.int; }, 0) / v.length;
+    var giorniUnici = {};
+    v.forEach(function (e) { giorniUnici[e.ts.slice(0, 10)] = 1; });
+    var sette = v.filter(function (e) {
+      return daISO(e.ts).getTime() > Date.now() - 7 * 864e5;
+    }).length;
+    box.innerHTML =
+      '<div><div class="n">' + v.length + '</div><div class="k">voci in tutto</div></div>' +
+      '<div><div class="n">' + media.toFixed(1) + '</div><div class="k">intensità media</div></div>' +
+      '<div><div class="n">' + sette + '</div><div class="k">ultimi 7 giorni</div></div>';
+    return box;
+  }
+
+  function nodoGrafico(v) {
+    var punti = v.slice(0, 30).reverse();
+    var box = document.createElement("div");
+    box.className = "grafico";
+
+    var W = 640, H = 210, ML = 26, MR = 12, MT = 14, MB = 26;
+    var x0 = ML, x1 = W - MR, y0 = MT, y1 = H - MB;
+    var px = function (i) {
+      return punti.length === 1 ? (x0 + x1) / 2 : x0 + (i / (punti.length - 1)) * (x1 - x0);
+    };
+    var py = function (n) { return y1 - ((n - 1) / 9) * (y1 - y0); };
+
+    var s = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Andamento dell\'intensità nelle ultime voci">';
+    [1, 5, 10].forEach(function (n) {
+      s += '<line x1="' + x0 + '" y1="' + py(n) + '" x2="' + x1 + '" y2="' + py(n) +
+           '" stroke="var(--line)" stroke-width="1"/>';
+      s += '<text x="' + (x0 - 7) + '" y="' + (py(n) + 4) +
+           '" text-anchor="end" font-size="11" fill="var(--ink-faint)" font-family="Instrument Sans, sans-serif">' + n + "</text>";
+    });
+    if (punti.length > 1) {
+      var d = punti.map(function (e, i) { return (i ? "L" : "M") + px(i).toFixed(1) + " " + py(e.int).toFixed(1); }).join(" ");
+      s += '<path d="' + d + '" fill="none" stroke="var(--line)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    punti.forEach(function (e, i) {
+      s += '<circle cx="' + px(i).toFixed(1) + '" cy="' + py(e.int).toFixed(1) +
+           '" r="5" fill="' + tinta(e.emo) + '"><title>' +
+           esc(PER_CHIAVE[e.emo].nome + " " + e.int + "/10 — " + dataBreve(daISO(e.ts))) + "</title></circle>";
+    });
+    var primo = dataBreve(daISO(punti[0].ts));
+    var ultimo = dataBreve(daISO(punti[punti.length - 1].ts));
+    s += '<text x="' + x0 + '" y="' + (H - 7) + '" font-size="11" fill="var(--ink-faint)" font-family="Instrument Sans, sans-serif">' + esc(primo) + "</text>";
+    if (punti.length > 1) {
+      s += '<text x="' + x1 + '" y="' + (H - 7) + '" text-anchor="end" font-size="11" fill="var(--ink-faint)" font-family="Instrument Sans, sans-serif">' + esc(ultimo) + "</text>";
+    }
+    s += "</svg>";
+    box.innerHTML = s;
+    return box;
+  }
+
+  function nodoConteggi(v) {
+    var box = document.createElement("div");
+    box.className = "conteggi";
+    var n = {};
+    v.forEach(function (e) { n[e.emo] = (n[e.emo] || 0) + 1; });
+    EMOZIONI.filter(function (e) { return n[e.k]; })
+      .sort(function (a, b) { return n[b.k] - n[a.k]; })
+      .forEach(function (e) {
+        var c = document.createElement("span");
+        c.className = "chip";
+        c.style.setProperty("--c", "var(" + e.v + ")");
+        c.innerHTML = '<span class="pallino"></span>' + esc(e.nome) + " <b>" + n[e.k] + "</b>";
+        box.appendChild(c);
+      });
+    return box;
+  }
+
+  function nodoVoce(e) {
+    var em = PER_CHIAVE[e.emo];
+    var art = document.createElement("article");
+    art.className = "voce";
+    art.style.setProperty("--c", "var(" + em.v + ")");
+
+    var capo = '<div class="voce-capo" style="color:var(' + em.v + ')">' + iconaDi(em, 26) +
+      '<span class="voce-nome">' + esc(em.nome) + "</span>" +
+      '<span class="voce-int">' + e.int + "/10</span>" +
+      '<span class="voce-ora">' + oraDi(daISO(e.ts)) + "</span></div>";
+
+    var righe = "";
+    [["A · Situazione", e.a], ["B · Pensiero", e.b], ["C · Conseguenza", e.c]].forEach(function (r) {
+      if (r[1]) righe += "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>";
+    });
+
+    art.innerHTML = capo + (righe ? "<dl>" + righe + "</dl>" : "");
+
+    var comandi = document.createElement("div");
+    comandi.className = "voce-comandi";
+
+    var mod = document.createElement("button");
+    mod.className = "cestino ritocca";
+    mod.type = "button";
+    mod.textContent = "Modifica";
+    mod.addEventListener("click", function () { apriModifica(e); });
+
+    // niente confirm(): nella WebView di Android non compare e risponde sempre "no"
+    var btn = document.createElement("button");
+    btn.className = "cestino";
+    btn.type = "button";
+    btn.textContent = "Elimina";
+    btn.addEventListener("click", function () { chiediElimina(e); });
+
+    comandi.appendChild(mod);
+    comandi.appendChild(btn);
+    art.appendChild(comandi);
+    return art;
+  }
+
+  /* -- eliminazione, con conferma ---------------------------------------- */
+  var daEliminare = null;
+
+  function chiediElimina(e) {
+    daEliminare = e;
+    var d = daISO(e.ts);
+    document.getElementById("testo-elimina").textContent =
+      PER_CHIAVE[e.emo].nome + " " + e.int + "/10, " + dataLunga(d) + " alle " + oraDi(d) +
+      ". Non si potrà recuperare.";
+    document.getElementById("modale-elimina").classList.remove("via");
+  }
+
+  function chiudiElimina() {
+    daEliminare = null;
+    document.getElementById("modale-elimina").classList.add("via");
+  }
+
+  function confermaElimina() {
+    var e = daEliminare;
+    chiudiElimina();
+    if (!e) return;
+    var t = { id: e.id, ts: e.ts, del: true, up: Date.now() };
+    voci[e.id] = t;
+    scriviLocale();
+    spingi(t);
+    if (inModifica === e.id) chiudiModifica();
+    disegna();
+    brinda("Voce eliminata");
+  }
+
+  document.getElementById("annulla-elimina").addEventListener("click", chiudiElimina);
+  document.getElementById("conferma-elimina").addEventListener("click", confermaElimina);
+  document.getElementById("modale-elimina").addEventListener("click", function (ev) {
+    if (ev.target === this) chiudiElimina();
+  });
+
+  /* -- esportazione ----------------------------------------------------- */
+  function rapporto() {
+    var v = elenco().slice().reverse();
+    var righe = ["DIARIO DELLE EMOZIONI", "Esportato il " + dataLunga(new Date()) + " " + new Date().getFullYear(), ""];
+    var gCorrente = "";
+    v.forEach(function (e) {
+      var g = e.ts.slice(0, 10);
+      if (g !== gCorrente) {
+        gCorrente = g;
+        var d = daISO(g + "T00:00");
+        var t = dataLunga(d) + " " + d.getFullYear();
+        righe.push("", "── " + t.charAt(0).toUpperCase() + t.slice(1) + " ──");
+      }
+      righe.push("");
+      righe.push(oraDi(daISO(e.ts)) + "  " + PER_CHIAVE[e.emo].nome.toUpperCase() + "  intensità " + e.int + "/10");
+      if (e.a) righe.push("  A · Situazione:   " + e.a);
+      if (e.b) righe.push("  B · Pensiero:     " + e.b);
+      if (e.c) righe.push("  C · Conseguenza:  " + e.c);
+    });
+    return righe.join("\n");
+  }
+
+  var PONTE = window.DiarioAndroid || null;   // fornito dall'app Android
+
+  function condividi(testo) {
+    if (PONTE) { PONTE.condividi(testo); return; }
+    if (navigator.share) { navigator.share({ text: testo }).catch(function () {}); return; }
+    copiaNegliAppunti(testo);
+  }
+
+  function copiaNegliAppunti(testo) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(testo).then(
+        function () { brinda("Copiato negli appunti"); },
+        function () { window.prompt("Copia il contenuto:", testo.slice(0, 4000)); }
+      );
+    } else {
+      window.prompt("Copia il contenuto:", testo.slice(0, 4000));
+    }
+  }
+
+  async function scarica(nomeFile, dati) {
+    if (PONTE) {
+      var esito = PONTE.salvaFile(nomeFile, dati);
+      brinda(esito || "Salvato");
+      return;
+    }
+    var d = null;
+    try { d = await window.claude.use("downloads"); } catch (err) { d = null; }
+    if (d) {
+      try { await d.save({ filename: nomeFile, data: dati }); brinda("File pronto"); }
+      catch (err) { brinda("Download annullato"); }
+      return;
+    }
+    // browser normale: un vero download
+    try {
+      var url = URL.createObjectURL(new Blob([dati], { type: "application/octet-stream" }));
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = nomeFile;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      brinda("File scaricato");
+      return;
+    } catch (err) { /* resta la copia */ }
+    copiaNegliAppunti(dati);
+  }
+
+  function nodoAzioni() {
+    var box = document.createElement("div");
+    box.className = "azioni";
+
+    var b1 = document.createElement("button");
+    b1.type = "button";
+    b1.className = "principale";
+    b1.textContent = "Analizza con lo psicologo";
+    b1.addEventListener("click", apriScelta);
+
+    var b2 = document.createElement("button");
+    b2.type = "button";
+    b2.textContent = PONTE ? "Invia come testo" : "Esporta come testo";
+    b2.addEventListener("click", function () {
+      if (PONTE) { condividi(rapporto()); return; }
+      scarica("diario-emozioni-" + new Date().toISOString().slice(0, 10) + ".txt", rapporto());
+    });
+
+    box.appendChild(b1);
+    box.appendChild(b2);
+    return box;
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  Blocco con PIN                                                     *
+   * ------------------------------------------------------------------ */
+
+  /* -- SHA-256, per non tenere mai il PIN in chiaro -------------------- */
+  var sha256 = (function () {
+    var K = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+
+    return function (byte) {
+      var h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+      var lungo = byte.length;
+      var totale = ((lungo + 9 + 63) >> 6) << 6;
+      var m = new Uint8Array(totale);
+      m.set(byte);
+      m[lungo] = 0x80;
+      var bit = lungo * 8;
+      m[totale - 4] = (bit >>> 24) & 0xff;
+      m[totale - 3] = (bit >>> 16) & 0xff;
+      m[totale - 2] = (bit >>> 8) & 0xff;
+      m[totale - 1] = bit & 0xff;
+
+      var w = new Int32Array(64);
+      for (var off = 0; off < totale; off += 64) {
+        for (var i = 0; i < 16; i++) {
+          w[i] = (m[off + i * 4] << 24) | (m[off + i * 4 + 1] << 16) |
+                 (m[off + i * 4 + 2] << 8) | m[off + i * 4 + 3];
+        }
+        for (i = 16; i < 64; i++) {
+          var s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+          var s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+          w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+        }
+        var a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+        for (i = 0; i < 64; i++) {
+          var S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+          var ch = (e & f) ^ (~e & g);
+          var t1 = (hh + S1 + ch + K[i] + w[i]) | 0;
+          var S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+          var maj = (a & b) ^ (a & c) ^ (b & c);
+          var t2 = (S0 + maj) | 0;
+          hh = g; g = f; f = e; e = (d + t1) | 0;
+          d = c; c = b; b = a; a = (t1 + t2) | 0;
+        }
+        h[0] = (h[0] + a) | 0; h[1] = (h[1] + b) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
+        h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+      }
+      var fuori = new Uint8Array(32);
+      for (i = 0; i < 8; i++) {
+        fuori[i * 4]     = (h[i] >>> 24) & 0xff;
+        fuori[i * 4 + 1] = (h[i] >>> 16) & 0xff;
+        fuori[i * 4 + 2] = (h[i] >>> 8) & 0xff;
+        fuori[i * 4 + 3] = h[i] & 0xff;
+      }
+      return fuori;
+    };
+  })();
+
+  // Costo deliberato per ogni verifica. Con 4 cifre lo spazio è di sole 10.000
+  // combinazioni, quindi le iterazioni rallentano un attacco ma non lo fermano:
+  // la difesa vera è la penalità progressiva dopo i tentativi sbagliati. Meglio
+  // quindi tenere lo sblocco reattivo che inseguire un numero alto.
+  var GIRI = 2000;
+
+  function esaDa(byte) {
+    var s = "";
+    for (var i = 0; i < byte.length; i++) s += (byte[i] < 16 ? "0" : "") + byte[i].toString(16);
+    return s;
+  }
+  function byteDa(testo) {
+    var u = [];
+    for (var i = 0; i < testo.length; i++) u.push(testo.charCodeAt(i) & 0xff);
+    return new Uint8Array(u);
+  }
+
+  function impasta(pin, saleEsa) {
+    var sale = byteDa(saleEsa);
+    var dentro = new Uint8Array(sale.length + pin.length);
+    dentro.set(sale); dentro.set(byteDa(pin), sale.length);
+    var h = sha256(dentro);
+    var giro = new Uint8Array(32 + sale.length);
+    for (var i = 0; i < GIRI; i++) {
+      giro.set(h); giro.set(sale, 32);
+      h = sha256(giro);
+    }
+    return esaDa(h);
+  }
+
+  function saleNuovo() {
+    var b = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b);
+    else for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    return esaDa(b);
+  }
+
+  /* -- configurazione del blocco --------------------------------------- */
+  var CHIAVE_BLOCCO = "diario-emozioni-blocco-v1";
+  var blocco = null;   // {sale, hash, biometria, tentativi, fino}
+
+  function leggiBlocco() {
+    try {
+      var g = localStorage.getItem(CHIAVE_BLOCCO);
+      if (!g) return null;
+      var c = JSON.parse(g);
+      return (c && c.hash && c.sale) ? c : null;
+    } catch (err) { return null; }
+  }
+  function scriviBlocco() {
+    try {
+      if (blocco) localStorage.setItem(CHIAVE_BLOCCO, JSON.stringify(blocco));
+      else localStorage.removeItem(CHIAVE_BLOCCO);
+    } catch (err) { /* modalità privata */ }
+  }
+
+  /* -- icone ------------------------------------------------------------ */
+  var IC_CANCELLA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M20 6H9.6L3.4 12l6.2 6H20a1.6 1.6 0 0 0 1.6-1.6V7.6A1.6 1.6 0 0 0 20 6Z"/>' +
+    '<path d="m17 10-4 4"/><path d="m13 10 4 4"/></svg>';
+
+  var IC_IMPRONTA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+    'stroke-linecap="round" aria-hidden="true">' +
+    '<path d="M12 4.4c-3 0-5.4 2.4-5.4 5.4v2.4"/>' +
+    '<path d="M12 8c-1 0-1.8.8-1.8 1.8v4.4"/>' +
+    '<path d="M12 8c1 0 1.8.8 1.8 1.8v6.6"/>' +
+    '<path d="M17.4 9.8v5"/><path d="M6.6 16.2c0 1.4.3 2.6.9 3.6"/>' +
+    '<path d="M9.9 18.6c.3 1 .7 1.8 1.2 2.4"/><path d="M14.6 20.4c.5-.9.8-1.9.9-3"/></svg>';
+
+  /* -- travestimento: le due icone della home, come appaiono sul telefono -- */
+  var ICONA_DIARIO = '<svg viewBox="18 18 72 72" aria-hidden="true">' +
+    '<rect x="18" y="18" width="72" height="72" fill="#1A1922"/>' +
+    '<circle cx="54" cy="40" r="16" fill="#E9AB4B" opacity=".95"/>' +
+    '<circle cx="43" cy="62" r="16" fill="#37B4CE" opacity=".85"/>' +
+    '<circle cx="65" cy="62" r="16" fill="#9B7CE0" opacity=".85"/></svg>';
+
+  var ICONA_SCONTI = '<svg viewBox="18 18 72 72" aria-hidden="true">' +
+    '<rect x="18" y="18" width="72" height="72" fill="#E4572E"/>' +
+    '<g transform="rotate(-45 54 54)">' +
+    '<path fill="#FFFFFF" d="M39 40H75a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H39L29 54Z"/>' +
+    '<circle cx="38" cy="54" r="3" fill="#E4572E"/>' +
+    '<circle cx="52" cy="48.5" r="3.2" fill="#E4572E"/>' +
+    '<circle cx="66" cy="59.5" r="3.2" fill="#E4572E"/>' +
+    '<path d="M67 46 51 62" stroke="#E4572E" stroke-width="3" stroke-linecap="round"/></g></svg>';
+
+  var travestito = false;   // la schermata di apertura sta mostrando "Sconti"
+
+  function mimeticoDisponibile() { return !!(PONTE && PONTE.camuffa); }
+  function mimeticoAttivo() {
+    if (!mimeticoDisponibile()) return false;
+    try { return !!PONTE.camuffamentoAttivo(); } catch (err) { return false; }
+  }
+  function testoApertura() {
+    return travestito ? "Inserisci il codice per accedere" : "Inserisci il PIN per continuare";
+  }
+
+  var MARCHIO = '<svg viewBox="0 0 108 108" aria-hidden="true">' +
+    '<path fill="var(--gioia)" opacity=".92" d="M38 40a16 16 0 1 0 32 0 16 16 0 1 0-32 0Z"/>' +
+    '<path fill="var(--sorpresa)" opacity=".82" d="M27 62a16 16 0 1 0 32 0 16 16 0 1 0-32 0Z"/>' +
+    '<path fill="var(--paura)" opacity=".82" d="M49 62a16 16 0 1 0 32 0 16 16 0 1 0-32 0Z"/></svg>';
+
+  /* -- schermata del PIN ------------------------------------------------ */
+  var CIFRE = 4;
+  var pinModo = null;      // "apertura" | "nuovo" | "conferma" | "verifica"
+  var pinBuffer = "";
+  var pinPrimo = "";       // il PIN scelto, in attesa di conferma
+  var pinDopo = null;      // cosa fare dopo una verifica riuscita
+  var pinChiuso = false;
+
+  function biometriaPronta() {
+    if (!PONTE || !PONTE.biometriaDisponibile) return false;
+    try { return !!PONTE.biometriaDisponibile(); } catch (err) { return false; }
+  }
+
+  function costruisciTastierino() {
+    var t = document.getElementById("tastierino");
+    t.innerHTML = "";
+    var tasti = ["1","2","3","4","5","6","7","8","9","vuoto","0","cancella"];
+    tasti.forEach(function (k) {
+      var b = document.createElement("button");
+      b.type = "button";
+      if (k === "vuoto") {
+        b.className = "muto";
+        b.disabled = true;
+        b.setAttribute("aria-hidden", "true");
+      } else if (k === "cancella") {
+        b.className = "muto";
+        b.innerHTML = IC_CANCELLA;
+        b.setAttribute("aria-label", "Cancella");
+        b.addEventListener("click", function () {
+          pinBuffer = pinBuffer.slice(0, -1);
+          disegnaPunti();
+        });
+      } else {
+        b.textContent = k;
+        b.setAttribute("aria-label", k);
+        b.addEventListener("click", function () { premiCifra(k); });
+      }
+      t.appendChild(b);
+    });
+  }
+
+  function disegnaPunti(sbagliato) {
+    var p = document.getElementById("pin-punti");
+    p.innerHTML = "";
+    for (var i = 0; i < CIFRE; i++) {
+      var s = document.createElement("span");
+      if (i < pinBuffer.length) s.className = "pieno";
+      p.appendChild(s);
+    }
+    if (sbagliato) {
+      p.classList.remove("sbaglia");
+      void p.offsetWidth;
+      p.classList.add("sbaglia");
+    }
+  }
+
+  function scriviSotto(testo, errore) {
+    var s = document.getElementById("blocco-sotto");
+    s.textContent = testo;
+    s.classList.toggle("errore", !!errore);
+  }
+
+  function attesaResidua() {
+    if (!blocco || !blocco.fino) return 0;
+    return Math.max(0, Math.ceil((blocco.fino - Date.now()) / 1000));
+  }
+
+  function apriPin(modo, opzioni) {
+    opzioni = opzioni || {};
+    pinModo = modo;
+    pinBuffer = "";
+    pinChiuso = false;
+    if (modo !== "conferma") pinPrimo = "";
+    pinDopo = opzioni.dopo || null;
+
+    travestito = modo === "apertura" && mimeticoAttivo();
+    document.getElementById("blocco").setAttribute("aria-label", travestito ? "Accesso" : "Diario bloccato");
+    document.getElementById("blocco-marchio").innerHTML =
+      modo !== "apertura" ? "" :
+      travestito ? '<span class="icona-app" style="width:58px;height:58px;border-radius:16px">' + ICONA_SCONTI + "</span>" :
+                   MARCHIO;
+    document.getElementById("blocco-titolo").textContent =
+      modo === "apertura" ? (travestito ? "Sconti" : "Diario delle Emozioni") :
+      modo === "nuovo"    ? "Scegli un PIN" :
+      modo === "conferma" ? "Ripeti il PIN" : "Conferma il PIN attuale";
+
+    scriviSotto(
+      modo === "apertura" ? testoApertura() :
+      modo === "nuovo"    ? "Quattro cifre, per aprire il diario" :
+      modo === "conferma" ? "Ancora una volta, per sicurezza" :
+                            "Serve per cambiare questa impostazione"
+    );
+
+    var annulla = document.getElementById("btn-annulla-pin");
+    annulla.classList.toggle("via", modo === "apertura");
+    document.getElementById("avviso-pin").classList.toggle("via", modo !== "nuovo");
+
+    var impronta = document.getElementById("btn-impronta");
+    var usaImpronta = modo === "apertura" && blocco && blocco.biometria && biometriaPronta();
+    impronta.classList.toggle("via", !usaImpronta);
+    impronta.innerHTML = IC_IMPRONTA + "<span>Usa l’impronta</span>";
+
+    disegnaPunti();
+    document.documentElement.setAttribute("data-bloccato", "1");
+
+    if (modo === "apertura") {
+      var resta = attesaResidua();
+      if (resta > 0) contaAllaRovescia();
+      else if (usaImpronta) setTimeout(chiediImpronta, 220);
+    }
+  }
+
+  function chiudiPin() {
+    pinModo = null;
+    pinBuffer = "";
+    pinPrimo = "";
+    pinChiuso = true;
+    document.documentElement.removeAttribute("data-bloccato");
+  }
+
+  function premiCifra(c) {
+    if (pinModo === "apertura" && attesaResidua() > 0) return;
+    if (pinBuffer.length >= CIFRE) return;
+    pinBuffer += c;
+    disegnaPunti();
+    if (pinBuffer.length === CIFRE) setTimeout(valutaPin, 90);
+  }
+
+  function valutaPin() {
+    var inserito = pinBuffer;
+    pinBuffer = "";
+
+    if (pinModo === "nuovo") {
+      pinPrimo = inserito;
+      apriPin("conferma");
+      return;
+    }
+
+    if (pinModo === "conferma") {
+      if (inserito !== pinPrimo) {
+        disegnaPunti(true);
+        scriviSotto("I due PIN non coincidono, riprova", true);
+        pinPrimo = "";
+        setTimeout(function () { apriPin("nuovo"); }, 900);
+        return;
+      }
+      var sale = saleNuovo();
+      blocco = {
+        sale: sale,
+        hash: impasta(inserito, sale),
+        biometria: false,
+        tentativi: 0,
+        fino: 0
+      };
+      scriviBlocco();
+      proteggiSchermo(true);
+      chiudiPin();
+      aggiornaVociBlocco();
+      apriImpostazioni();
+      brinda("Blocco attivo");
+      return;
+    }
+
+    // "apertura" e "verifica": confronto con quello salvato
+    var giusto = blocco && impasta(inserito, blocco.sale) === blocco.hash;
+
+    if (!giusto) {
+      blocco.tentativi = (blocco.tentativi || 0) + 1;
+      if (blocco.tentativi >= 10) blocco.fino = Date.now() + 300000;
+      else if (blocco.tentativi >= 5) blocco.fino = Date.now() + 30000;
+      scriviBlocco();
+      disegnaPunti(true);
+      if (attesaResidua() > 0) contaAllaRovescia();
+      else scriviSotto((travestito ? "Codice" : "PIN") + " errato, riprova", true);
+      return;
+    }
+
+    blocco.tentativi = 0;
+    blocco.fino = 0;
+    scriviBlocco();
+
+    if (pinModo === "verifica") {
+      var azione = pinDopo;
+      chiudiPin();
+      if (azione) azione();
+      return;
+    }
+    sblocca();
+  }
+
+  function contaAllaRovescia() {
+    var resta = attesaResidua();
+    if (resta <= 0) { scriviSotto(testoApertura()); return; }
+    scriviSotto("Troppi tentativi. Riprova fra " + resta + " second" + (resta === 1 ? "o" : "i"), true);
+    setTimeout(contaAllaRovescia, 1000);
+  }
+
+  function sblocca() {
+    chiudiPin();
+    scriviTestata();
+  }
+
+  /* -- impronta --------------------------------------------------------- */
+  function chiediImpronta() {
+    if (!biometriaPronta()) return;
+    try { PONTE.chiediBiometria(); } catch (err) { /* il PIN resta disponibile */ }
+  }
+
+  // chiamata da Android al termine del riconoscimento
+  window.DiarioBiometria = function (riuscito, messaggio) {
+    if (pinModo !== "apertura") return;
+    if (riuscito) { sblocca(); return; }
+    if (messaggio) scriviSotto(messaggio, true);
+  };
+
+  function proteggiSchermo(attiva) {
+    if (PONTE && PONTE.proteggiSchermo) {
+      try { PONTE.proteggiSchermo(attiva); } catch (err) { /* niente da fare */ }
+    }
+  }
+
+  /* -- sospensione: al ritorno il diario è di nuovo chiuso -------------- */
+  var GRAZIA = 15000;   // tornare subito da una condivisione non richiede il PIN
+  var sospesoDa = 0;
+
+  function sospendi() { sospesoDa = Date.now(); }
+  function riprendi() {
+    if (!blocco || pinModo === "apertura") return;
+    if (pinModo) return;                       // siamo già dentro un flusso PIN
+    if (!sospesoDa || Date.now() - sospesoDa < GRAZIA) return;
+    apriPin("apertura");
+  }
+
+  window.DiarioSospeso = sospendi;
+  window.DiarioRipreso = riprendi;
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) sospendi(); else riprendi();
+  });
+
+  document.getElementById("btn-impronta").addEventListener("click", chiediImpronta);
+  document.getElementById("btn-annulla-pin").addEventListener("click", function () {
+    if (pinModo === "apertura") return;
+    chiudiPin();
+    aggiornaVociBlocco();
+    apriImpostazioni();
+  });
+
+  /* ------------------------------------------------------------------ *
+   *  Impostazioni                                                       *
+   * ------------------------------------------------------------------ */
+  function apriImpostazioni() {
+    aggiornaSommario();
+    aggiornaVociBlocco();
+    aggiornaVoceMimetico();
+    aggiornaVoceAggiornamenti();
+    document.getElementById("modale-impostazioni").classList.remove("via");
+  }
+
+  function aggiornaVoceMimetico() {
+    var riga = document.getElementById("commuta-mimetico");
+    riga.classList.toggle("via", !mimeticoDisponibile());
+    var attivo = mimeticoAttivo();
+    riga.setAttribute("aria-pressed", String(attivo));
+    document.getElementById("sommario-mimetico").textContent =
+      attivo ? "attivo: nella home si chiama «Sconti»" : "nella home appare come app di sconti";
+  }
+
+  function commutaMimetico() {
+    if (!mimeticoDisponibile()) return;
+
+    if (mimeticoAttivo()) {
+      var ancora = PONTE.camuffa(false);
+      aggiornaVoceMimetico();
+      brinda(ancora ? "Non è stato possibile togliere il travestimento"
+                    : "Nella home torna «Diario Emozioni»");
+      return;
+    }
+
+    document.getElementById("icona-diario-anteprima").innerHTML = ICONA_DIARIO;
+    document.getElementById("icona-sconti-anteprima").innerHTML = ICONA_SCONTI;
+    var nota = document.getElementById("nota-pin-mimetico");
+    if (blocco) {
+      nota.className = "";
+      nota.textContent = "Con il blocco attivo, chi apre «Sconti» vedrà solo la richiesta di un codice.";
+    } else {
+      nota.className = "importante";
+      nota.textContent = "Consigliato: attiva anche il blocco con PIN, altrimenti chi apre «Sconti» vede subito il diario.";
+    }
+    document.getElementById("modale-impostazioni").classList.add("via");
+    document.getElementById("modale-mimetico").classList.remove("via");
+  }
+
+  function confermaMimetico() {
+    var riuscito = PONTE.camuffa(true);
+    document.getElementById("modale-mimetico").classList.add("via");
+    apriImpostazioni();
+    brinda(riuscito ? "Travestimento attivo" : "Non è stato possibile attivare il travestimento");
+  }
+
+  function aggiornaVociBlocco() {
+    var attivo = !!blocco;
+    var interruttore = document.getElementById("commuta-blocco");
+    interruttore.setAttribute("aria-pressed", String(attivo));
+    document.getElementById("sommario-blocco").textContent =
+      attivo ? "acceso, 4 cifre" : "spento";
+
+    document.getElementById("cambia-pin").classList.toggle("via", !attivo);
+
+    var rigaImpronta = document.getElementById("commuta-impronta");
+    var mostra = attivo && biometriaPronta();
+    rigaImpronta.classList.toggle("via", !mostra);
+    rigaImpronta.setAttribute("aria-pressed", String(!!(blocco && blocco.biometria)));
+  }
+
+  function commutaBlocco() {
+    if (!blocco) {
+      document.getElementById("modale-impostazioni").classList.add("via");
+      apriPin("nuovo");
+      return;
+    }
+    document.getElementById("modale-impostazioni").classList.add("via");
+    apriPin("verifica", {
+      dopo: function () {
+        blocco = null;
+        scriviBlocco();
+        proteggiSchermo(false);
+        aggiornaVociBlocco();
+        apriImpostazioni();
+        brinda("Blocco disattivato");
+      }
+    });
+  }
+
+  function commutaImpronta() {
+    if (!blocco) return;
+    if (blocco.biometria) {
+      blocco.biometria = false;
+      scriviBlocco();
+      aggiornaVociBlocco();
+      brinda("Sblocco con impronta disattivato");
+      return;
+    }
+    blocco.biometria = true;
+    scriviBlocco();
+    aggiornaVociBlocco();
+    brinda("Userai l’impronta alla prossima apertura");
+  }
+
+  function cambiaPin() {
+    document.getElementById("modale-impostazioni").classList.add("via");
+    apriPin("verifica", { dopo: function () { apriPin("nuovo"); } });
+  }
+
+  function aggiornaSommario() {
+    var n = emozioniAttive().length;
+    document.getElementById("sommario-emozioni").textContent =
+      n === EMOZIONI.length ? "tutte e " + EMOZIONI.length : n + " di " + EMOZIONI.length;
+  }
+
+  function apriSceltaEmozioni() {
+    document.getElementById("modale-impostazioni").classList.add("via");
+    costruisciListaEmozioni();
+    document.getElementById("modale-emozioni").classList.remove("via");
+  }
+
+  function costruisciListaEmozioni() {
+    var lista = document.getElementById("lista-emozioni");
+    lista.innerHTML = "";
+    EMOZIONI.forEach(function (e) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "riga-emo";
+      b.style.setProperty("--c", "var(" + e.v + ")");
+      b.dataset.k = e.k;
+      b.setAttribute("aria-pressed", String(eAttiva(e.k)));
+      b.innerHTML = iconaDi(e, 28) +
+        '<span class="riga-nome">' + esc(e.nome) + "</span>" +
+        '<span class="interruttore" aria-hidden="true"></span>';
+      b.addEventListener("click", function () { commutaEmozione(e.k, b); });
+      lista.appendChild(b);
+    });
+    segnaUltimaRimasta();
+  }
+
+  function commutaEmozione(k, bottone) {
+    var ora = emozioniAttive().map(function (e) { return e.k; });
+    var acceso = ora.indexOf(k) >= 0;
+
+    if (acceso && ora.length === 1) {
+      brinda("Almeno un’emozione deve restare accesa");
+      return;
+    }
+    if (acceso) ora.splice(ora.indexOf(k), 1);
+    else ora.push(k);
+
+    // salvo nell'ordine originale, così la griglia non si scompiglia
+    attive = EMOZIONI.filter(function (e) { return ora.indexOf(e.k) >= 0; })
+                     .map(function (e) { return e.k; });
+    if (attive.length === EMOZIONI.length) attive = null;
+    scriviAttive();
+
+    bottone.setAttribute("aria-pressed", String(!acceso));
+    segnaUltimaRimasta();
+    aggiornaSommario();
+    rinfrescaGriglia();
+  }
+
+  // quando ne resta una sola, il suo interruttore si mostra bloccato
+  function segnaUltimaRimasta() {
+    var sola = emozioniAttive().length === 1;
+    document.querySelectorAll(".riga-emo").forEach(function (b) {
+      b.classList.toggle("sola", sola && b.getAttribute("aria-pressed") === "true");
+    });
+  }
+
+  function rinfrescaGriglia() {
+    if (scelta && !eAttiva(scelta) && !inModifica) {
+      scelta = null;
+      applicaTinta(null);
+      fermaBolle(document.getElementById("bolle"));
+      document.getElementById("sfondo").style.background = "var(--paper)";
+    }
+    costruisciEmozioni();
+    aggiornaModulo();
+  }
+
+  document.querySelectorAll("[data-impostazioni]").forEach(function (b) {
+    b.innerHTML = INGRANAGGIO;
+    b.addEventListener("click", apriImpostazioni);
+  });
+  document.getElementById("apri-emozioni").addEventListener("click", apriSceltaEmozioni);
+  document.getElementById("commuta-blocco").addEventListener("click", commutaBlocco);
+  document.getElementById("commuta-impronta").addEventListener("click", commutaImpronta);
+  document.getElementById("cambia-pin").addEventListener("click", cambiaPin);
+  document.getElementById("commuta-mimetico").addEventListener("click", commutaMimetico);
+  document.getElementById("conferma-mimetico").addEventListener("click", confermaMimetico);
+  document.getElementById("annulla-mimetico").addEventListener("click", function () {
+    document.getElementById("modale-mimetico").classList.add("via");
+    apriImpostazioni();
+  });
+  document.getElementById("modale-mimetico").addEventListener("click", function (ev) {
+    if (ev.target === this) { this.classList.add("via"); apriImpostazioni(); }
+  });
+  document.getElementById("chiudi-impostazioni").addEventListener("click", function () {
+    document.getElementById("modale-impostazioni").classList.add("via");
+  });
+  document.getElementById("indietro-emozioni").addEventListener("click", function () {
+    document.getElementById("modale-emozioni").classList.add("via");
+    apriImpostazioni();
+  });
+  document.getElementById("fatto-emozioni").addEventListener("click", function () {
+    document.getElementById("modale-emozioni").classList.add("via");
+  });
+  ["modale-impostazioni", "modale-emozioni"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function (ev) {
+      if (ev.target === this) this.classList.add("via");
+    });
+  });
+
+  /* ------------------------------------------------------------------ *
+   *  I tuoi dati: esporta, importa, cancella tutto                      *
+   * ------------------------------------------------------------------ */
+  function passaDa(chiudi, apri) {
+    document.getElementById(chiudi).classList.add("via");
+    if (apri) document.getElementById(apri).classList.remove("via");
+  }
+  function tornaImpostazioni(id) {
+    document.getElementById(id).classList.add("via");
+    apriImpostazioni();
+  }
+  function quanteVoci(n) { return n === 1 ? "1 voce" : n + " voci"; }
+
+  /* -- esporta: solo le voci vive, le eliminate non servono altrove ----- */
+  function chiediEsporta() {
+    var n = elenco().length;
+    if (!n) { brinda("Non c’è ancora nulla da esportare"); return; }
+    document.getElementById("testo-esporta").textContent =
+      "Verrà creato un file con " + quanteVoci(n) + (PONTE ? ", nella cartella Download." : ".");
+    passaDa("modale-impostazioni", "modale-esporta");
+  }
+
+  function esporta() {
+    var vive = {};
+    elenco().forEach(function (v) { vive[v.id] = v; });
+    passaDa("modale-esporta");
+    scarica("diario-emozioni-backup-" + isoGiorno(new Date()) + ".json",
+            JSON.stringify({ app: "diario-emozioni", versione: 1, esportato: locISO(new Date()),
+                             attive: attive, voci: vive }, null, 2));
+  }
+
+  /* -- importa: le due raccolte si uniscono ----------------------------- */
+  var daImportare = null;   // { voci, attive } già controllati, in attesa di conferma
+
+  function scegliFileImporta() {
+    var inp = document.getElementById("file-importa");
+    inp.value = "";
+    inp.click();
+  }
+
+  // tiene solo i campi noti e con il tipo giusto: un file ritoccato a mano
+  // non deve poter rompere lo storico né infilare markup nella pagina
+  function vocePulita(id, v) {
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return null;
+    if (!v || typeof v !== "object" || v.del) return null;
+    if (typeof v.ts !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v.ts)) return null;
+    if (!PER_CHIAVE.hasOwnProperty(v.emo)) return null;
+    var int = Math.round(Number(v.int));
+    if (!(int >= 1 && int <= 10)) return null;
+    var testo = function (s) { return typeof s === "string" ? s.slice(0, 20000) : ""; };
+    return { id: id, ts: v.ts, emo: v.emo, int: int,
+             a: testo(v.a), b: testo(v.b), c: testo(v.c), up: Number(v.up) || 0 };
+  }
+
+  function preparaImporta(testo) {
+    var dati = null;
+    try { dati = JSON.parse(testo); } catch (err) { /* non è JSON */ }
+    if (!dati || typeof dati !== "object" || !dati.voci || typeof dati.voci !== "object") {
+      brinda("Questo file non è un backup del diario");
+      return;
+    }
+
+    var prese = {}, nuove = 0, aggiornate = 0, presenti = 0, scartate = 0, date = [];
+    Object.keys(dati.voci).forEach(function (id) {
+      if (dati.voci[id] && dati.voci[id].del) return;   // vecchi backup: le eliminate si saltano
+      var v = vocePulita(id, dati.voci[id]);
+      if (!v) { scartate++; return; }
+      date.push(v.ts);
+      var qui = voci[id];
+      if (!qui || qui.del) {
+        // anche se qui era stata eliminata: importare è una scelta esplicita
+        v.up = Math.max(v.up, Date.now());
+        prese[id] = v; nuove++;
+      } else if (v.up > (qui.up || 0)) {
+        prese[id] = v; aggiornate++;
+      } else {
+        presenti++;
+      }
+    });
+
+    if (!nuove && !aggiornate) {
+      brinda(presenti ? "Tutte le voci del file sono già nel diario" : "Nel file non ci sono voci leggibili");
+      return;
+    }
+
+    var att = Array.isArray(dati.attive)
+      ? dati.attive.filter(function (k) { return PER_CHIAVE.hasOwnProperty(k); }) : [];
+    daImportare = { voci: prese, attive: att.length ? att : null };
+
+    date.sort();
+    var giorno = function (s) {
+      var d = daISO(s);
+      return (d.getDate() === 1 ? "1°" : d.getDate()) + " " + MESI[d.getMonth()] + " " + d.getFullYear();
+    };
+    var dal = giorno(date[0]), al = giorno(date[date.length - 1]);
+    var parti = [];
+    if (nuove) parti.push(nuove === 1 ? "1 nuova" : nuove + " nuove");
+    if (aggiornate) parti.push(aggiornate === 1 ? "1 aggiornata" : aggiornate + " aggiornate");
+    if (presenti) parti.push(presenti === 1 ? "1 già presente" : presenti + " già presenti");
+    document.getElementById("testo-importa").textContent =
+      "Il file contiene " + quanteVoci(date.length) +
+      (date.length > 1 ? ", dal " + dal + " al " + al : ", del giorno " + dal) + ": " + parti.join(", ") + "." +
+      (scartate ? " " + quanteVoci(scartate) + " non leggibili verranno saltate." : "");
+    passaDa("modale-impostazioni", "modale-importa");
+  }
+
+  function importa() {
+    var d = daImportare;
+    daImportare = null;
+    passaDa("modale-importa");
+    if (!d) return;
+    var ids = Object.keys(d.voci);
+    ids.forEach(function (id) { voci[id] = d.voci[id]; spingi(d.voci[id]); });
+    scriviLocale();
+    // le emozioni attive arrivano solo su un telefono non ancora personalizzato
+    if (d.attive && !attive) {
+      attive = d.attive.length === EMOZIONI.length ? null : d.attive;
+      scriviAttive();
+      rinfrescaGriglia();
+    }
+    disegna();
+    vaiA("storico");
+    brinda(ids.length === 1 ? "1 voce importata" : ids.length + " voci importate");
+  }
+
+  document.getElementById("file-importa").addEventListener("change", function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    if (f.size > 20 * 1024 * 1024) { brinda("Il file è troppo grande"); return; }
+    var r = new FileReader();
+    r.onload = function () { preparaImporta(String(r.result || "")); };
+    r.onerror = function () { brinda("Non sono riuscito a leggere il file"); };
+    r.readAsText(f);
+  });
+
+  /* -- cancella tutto: due conferme, la seconda va scritta -------------- */
+  function chiediCancellaTutto() {
+    var n = elenco().length;
+    document.getElementById("testo-cancella").textContent = n
+      ? "Nel diario ci sono " + quanteVoci(n) + "."
+      : "Il diario è vuoto, ma verranno azzerati anche il PIN e le preferenze.";
+    passaDa("modale-impostazioni", "modale-cancella");
+  }
+
+  function parolaGiusta() {
+    return document.getElementById("parola-cancella").value.trim().toUpperCase() === "CANCELLA";
+  }
+
+  function avantiCancella() {
+    var inp = document.getElementById("parola-cancella");
+    inp.value = "";
+    document.getElementById("conferma-cancella").disabled = true;
+    passaDa("modale-cancella", "modale-cancella-2");
+    inp.focus();
+  }
+
+  function cancellaTutto() {
+    if (!parolaGiusta()) return;
+    passaDa("modale-cancella-2");
+    // dove c'è la sincronia le voci diventano lapidi, così non tornano indietro
+    if (db) {
+      Object.keys(voci).forEach(function (id) {
+        if (!voci[id].del) spingi({ id: id, ts: voci[id].ts, del: true, up: Date.now() });
+      });
+    }
+    voci = {};
+    try { localStorage.removeItem(CHIAVE_LS); } catch (err) { /* modalità privata */ }
+    attive = null;
+    scriviAttive();
+    blocco = null;
+    scriviBlocco();
+    proteggiSchermo(false);
+    if (inModifica) chiudiModifica();
+    azzeraModulo();
+    rinfrescaGriglia();
+    disegna();
+    vaiA("oggi");
+    brinda("Tutti i dati sono stati cancellati");
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  Aggiornamenti: li cerca l'app Android, la pagina non va in rete     *
+   * ------------------------------------------------------------------ */
+  var aggiornamento = null;   // l'ultima release trovata, se più nuova
+  var cercando = false;
+
+  function aggiornamentiDisponibili() { return !!(PONTE && PONTE.cercaAggiornamento); }
+
+  function versioneInstallata() {
+    try { return String(PONTE.versione() || ""); } catch (err) { return ""; }
+  }
+
+  // "v1.10" > "1.9": confronto numero per numero, ignorando la "v" iniziale
+  function piuNuova(a, b) {
+    var x = String(a).replace(/^v/i, "").split("."), y = String(b).replace(/^v/i, "").split(".");
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var p = parseInt(x[i], 10) || 0, q = parseInt(y[i], 10) || 0;
+      if (p !== q) return p > q;
+    }
+    return false;
+  }
+
+  function scriviSommarioAggiornamenti(testo) {
+    var v = versioneInstallata();
+    document.getElementById("sommario-aggiornamenti").textContent =
+      (v ? "versione " + v : "") + (testo ? (v ? " · " : "") + testo : "");
+  }
+
+  function aggiornaVoceAggiornamenti() {
+    var presente = aggiornamentiDisponibili();
+    document.getElementById("titolo-app").classList.toggle("via", !presente);
+    document.getElementById("cerca-aggiornamenti").classList.toggle("via", !presente);
+    if (presente && !cercando) scriviSommarioAggiornamenti("tocca per controllare");
+  }
+
+  function cercaAggiornamenti() {
+    if (!aggiornamentiDisponibili() || cercando) return;
+    cercando = true;
+    scriviSommarioAggiornamenti("controllo…");
+    try { PONTE.cercaAggiornamento(); }
+    catch (err) { window.DiarioAggiornamento({ errore: "rete" }); }
+  }
+
+  // chiamata da Android con la risposta di GitHub
+  window.DiarioAggiornamento = function (r) {
+    cercando = false;
+    if (!r || r.errore) {
+      scriviSommarioAggiornamenti("tocca per controllare");
+      brinda(r && r.errore === "nessuna" ? "Non ci sono ancora versioni pubblicate"
+                                         : "Nessuna connessione: riprova più tardi");
+      return;
+    }
+    var installata = versioneInstallata();
+    if (!piuNuova(r.versione, installata)) {
+      scriviSommarioAggiornamenti("è l’ultima");
+      brinda("Hai già l’ultima versione");
+      return;
+    }
+    aggiornamento = r;
+    scriviSommarioAggiornamenti("disponibile la " + String(r.versione).replace(/^v/i, ""));
+    document.getElementById("testo-aggiorna").textContent =
+      "Puoi passare dalla versione " + installata + " alla " + String(r.versione).replace(/^v/i, "") + ".";
+    passaDa("modale-impostazioni", "modale-aggiorna");
+  };
+
+  function scaricaAggiornamento() {
+    var r = aggiornamento;
+    passaDa("modale-aggiorna");
+    if (!r) return;
+    // senza un .apk allegato apro la pagina della release
+    try { PONTE.apriAggiornamento(r.apk || r.pagina); } catch (err) { /* niente browser */ }
+  }
+
+  document.getElementById("cerca-aggiornamenti").addEventListener("click", cercaAggiornamenti);
+  document.getElementById("conferma-aggiorna").addEventListener("click", scaricaAggiornamento);
+  document.getElementById("annulla-aggiorna").addEventListener("click", function () { tornaImpostazioni("modale-aggiorna"); });
+  document.getElementById("modale-aggiorna").addEventListener("click", function (ev) {
+    if (ev.target === this) tornaImpostazioni("modale-aggiorna");
+  });
+
+  document.getElementById("esporta-dati").addEventListener("click", chiediEsporta);
+  document.getElementById("importa-dati").addEventListener("click", scegliFileImporta);
+  document.getElementById("cancella-tutto").addEventListener("click", chiediCancellaTutto);
+  document.getElementById("conferma-esporta").addEventListener("click", esporta);
+  document.getElementById("conferma-importa").addEventListener("click", importa);
+  document.getElementById("avanti-cancella").addEventListener("click", avantiCancella);
+  document.getElementById("conferma-cancella").addEventListener("click", cancellaTutto);
+  document.getElementById("parola-cancella").addEventListener("input", function () {
+    document.getElementById("conferma-cancella").disabled = !parolaGiusta();
+  });
+  document.getElementById("parola-cancella").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") cancellaTutto();
+  });
+  ["modale-esporta", "modale-importa", "modale-cancella", "modale-cancella-2"].forEach(function (id) {
+    var m = document.getElementById(id);
+    m.addEventListener("click", function (ev) { if (ev.target === m) tornaImpostazioni(id); });
+  });
+  document.getElementById("annulla-esporta").addEventListener("click", function () { tornaImpostazioni("modale-esporta"); });
+  document.getElementById("annulla-importa").addEventListener("click", function () {
+    daImportare = null;
+    tornaImpostazioni("modale-importa");
+  });
+  document.getElementById("annulla-cancella").addEventListener("click", function () { tornaImpostazioni("modale-cancella"); });
+  document.getElementById("annulla-cancella-2").addEventListener("click", function () { tornaImpostazioni("modale-cancella-2"); });
+
+  /* ------------------------------------------------------------------ *
+   *  Rilettura con lo psicologo                                         *
+   * ------------------------------------------------------------------ */
+  var rassVoci = [], rassIdx = 0;
+  var tapOra = 0, tapX = 0, tapY = 0;
+
+  function isoGiorno(d) { return d.getFullYear() + "-" + due(d.getMonth() + 1) + "-" + due(d.getDate()); }
+
+  function daModale(id) { return document.getElementById(id); }
+  function aperta(id) { return !document.getElementById(id).classList.contains("via"); }
+
+  function apriScelta() {
+    var tutte = elenco();
+    if (!tutte.length) { brinda("Non c’è ancora nulla da rileggere"); return; }
+    var inp = daModale("data-da");
+    inp.min = tutte[tutte.length - 1].ts.slice(0, 10);   // la voce più vecchia
+    inp.max = isoGiorno(new Date());
+    scegliPeriodo(7);
+    daModale("modale-data").classList.remove("via");
+  }
+
+  function scegliPeriodo(giorni) {
+    var inp = daModale("data-da");
+    if (giorni === 0) {
+      inp.value = inp.min;
+    } else {
+      var d = new Date();
+      d.setDate(d.getDate() - giorni);
+      var v = isoGiorno(d);
+      inp.value = (inp.min && v < inp.min) ? inp.min : v;
+    }
+    document.querySelectorAll("#scorciatoie button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(Number(b.dataset.giorni) === giorni));
+    });
+    aggiornaAnteprima();
+  }
+
+  function selezionate() {
+    var da = daModale("data-da").value;
+    if (!da) return [];
+    return elenco()
+      .filter(function (e) { return e.ts.slice(0, 10) >= da; })
+      .sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; });
+  }
+
+  function aggiornaAnteprima() {
+    var n = selezionate().length;
+    daModale("anteprima-conteggio").textContent =
+      n === 0 ? "Nessuna voce in questo periodo"
+              : n === 1 ? "1 voce da ripercorrere"
+                        : n + " voci da ripercorrere";
+    daModale("btn-avvia").disabled = n === 0;
+  }
+
+  function avviaRassegna() {
+    rassVoci = selezionate();
+    if (!rassVoci.length) return;
+    rassIdx = 0;
+    daModale("modale-data").classList.add("via");
+
+    var r = daModale("rassegna");
+    r.classList.remove("via");
+    fermaBolle(daModale("rass-bolle"));
+    daModale("rass-sfondo").style.background = "var(--paper)";
+    tapOra = 0;
+
+    if (PONTE && PONTE.schermoIntero) { try { PONTE.schermoIntero(true); } catch (err) {} }
+    else if (r.requestFullscreen) { r.requestFullscreen().catch(function () {}); }
+
+    mostraPasso(null);
+  }
+
+  function mostraPasso(origine) {
+    var corpo = daModale("rass-corpo");
+    var finito = rassIdx >= rassVoci.length;
+    var colore;
+
+    if (finito) {
+      applicaTinta(null);
+      colore = "var(--paper)";
+      corpo.innerHTML = schedaFine();
+      daModale("rass-passo").textContent = "fine";
+      daModale("rass-invito").innerHTML = "<b>Due tocchi</b> per chiudere";
+      daModale("rass-avanzamento").style.width = "100%";
+    } else {
+      var e = rassVoci[rassIdx];
+      applicaTinta(e.emo);
+      colore = lavatura(e.emo, true, e.int);
+      corpo.innerHTML = schedaVoce(e, PER_CHIAVE[e.emo]);
+      daModale("rass-passo").textContent = (rassIdx + 1) + " di " + rassVoci.length;
+      daModale("rass-invito").innerHTML = "<b>Due tocchi</b> per la prossima";
+      daModale("rass-avanzamento").style.width =
+        ((rassIdx + 1) / rassVoci.length * 100).toFixed(1) + "%";
+    }
+
+    daModale("rass-indietro").disabled = rassIdx === 0;
+
+    var o = origine || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    allagaIn(daModale("rass-sfondo"), daModale("rass-bolle"), colore, o.x, o.y);
+
+    corpo.classList.remove("entra");
+    void corpo.offsetWidth;
+    corpo.classList.add("entra");
+    corpo.scrollTop = 0;
+  }
+
+  function schedaVoce(e, em) {
+    var d = daISO(e.ts);
+    var quando = dataLunga(d);
+    quando = quando.charAt(0).toUpperCase() + quando.slice(1) + " · " + oraDi(d);
+
+    var tacche = "";
+    for (var i = 1; i <= 10; i++) tacche += '<span class="' + (i <= e.int ? "viva" : "") + '"></span>';
+
+    var note = "";
+    [["A · Situazione", e.a], ["B · Pensiero", e.b], ["C · Conseguenza", e.c]].forEach(function (r) {
+      if (r[1]) note += '<dl class="rass-nota"><dt>' + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd></dl>";
+    });
+    if (!note) note = '<p class="rass-muta">Nessuna nota scritta in quel momento.</p>';
+
+    return '<div class="rass-quando">' + esc(quando) + "</div>" +
+           '<div class="rass-volto">' + iconaDi(em, 96) + "</div>" +
+           '<div class="rass-nome">' + esc(em.nome) + "</div>" +
+           '<div class="rass-scala"><div class="rass-tacche">' + tacche + "</div>" +
+           '<div class="rass-livello">intensità ' + e.int + " su 10</div></div>" +
+           '<div class="rass-note">' + note + "</div>";
+  }
+
+  function schedaFine() {
+    var n = rassVoci.length;
+    var media = (rassVoci.reduce(function (s, e) { return s + e.int; }, 0) / n).toFixed(1);
+    var da = dataBreve(daISO(rassVoci[0].ts));
+    var a = dataBreve(daISO(rassVoci[n - 1].ts));
+    return '<div class="rass-fine"><div class="titolo">Fine della rilettura</div>' +
+           "<p>" + n + (n === 1 ? " voce ripercorsa" : " voci ripercorse") +
+           ", da " + esc(da) + " a " + esc(a) +
+           ". Intensità media " + media + " su 10.</p></div>";
+  }
+
+  function avanti(x, y) {
+    if (rassIdx >= rassVoci.length) { chiudiRassegna(); return; }
+    rassIdx++;
+    mostraPasso({ x: x, y: y });
+  }
+
+  function indietroRassegna() {
+    if (rassIdx === 0) return;
+    rassIdx--;
+    mostraPasso(null);
+  }
+
+  function chiudiRassegna() {
+    daModale("rassegna").classList.add("via");
+    if (PONTE && PONTE.schermoIntero) { try { PONTE.schermoIntero(false); } catch (err) {} }
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(function () {});
+    }
+    applicaTinta(null);
+    fermaBolle(daModale("rass-bolle"));
+    daModale("rass-sfondo").style.background = "var(--paper)";
+  }
+
+  // doppio tocco sullo sfondo: avanti
+  daModale("rassegna").addEventListener("click", function (ev) {
+    if (ev.target.closest("button")) return;
+    var adesso = Date.now();
+    var vicino = Math.abs(ev.clientX - tapX) < 44 && Math.abs(ev.clientY - tapY) < 44;
+    if (adesso - tapOra < 450 && vicino) {
+      tapOra = 0;
+      avanti(ev.clientX, ev.clientY);
+    } else {
+      tapOra = adesso; tapX = ev.clientX; tapY = ev.clientY;
+    }
+  });
+
+  daModale("rass-chiudi").addEventListener("click", chiudiRassegna);
+  daModale("rass-indietro").addEventListener("click", indietroRassegna);
+  daModale("btn-annulla").addEventListener("click", function () {
+    daModale("modale-data").classList.add("via");
+  });
+  daModale("btn-avvia").addEventListener("click", avviaRassegna);
+  daModale("data-da").addEventListener("input", function () {
+    document.querySelectorAll("#scorciatoie button").forEach(function (b) {
+      b.setAttribute("aria-pressed", "false");
+    });
+    aggiornaAnteprima();
+  });
+  document.querySelectorAll("#scorciatoie button").forEach(function (b) {
+    b.addEventListener("click", function () { scegliPeriodo(Number(b.dataset.giorni)); });
+  });
+  daModale("modale-data").addEventListener("click", function (ev) {
+    if (ev.target === this) this.classList.add("via");
+  });
+
+  // tastiera: utile se la seduta si fa sul portatile
+  document.addEventListener("keydown", function (ev) {
+    if (!aperta("rassegna")) return;
+    if (ev.key === "Escape") { chiudiRassegna(); }
+    else if (ev.key === "ArrowRight" || ev.key === " " || ev.key === "Enter") {
+      ev.preventDefault();
+      avanti(window.innerWidth / 2, window.innerHeight / 2);
+    } else if (ev.key === "ArrowLeft") { indietroRassegna(); }
+  });
+
+  /* ------------------------------------------------------------------ *
+   *  Navigazione                                                        *
+   * ------------------------------------------------------------------ */
+  function vaiA(quale) {
+    var oggi = quale === "oggi";
+    document.getElementById("vista-oggi").classList.toggle("via", !oggi);
+    document.getElementById("vista-storico").classList.toggle("via", oggi);
+    document.getElementById("tab-oggi").setAttribute("aria-current", String(oggi));
+    document.getElementById("tab-storico").setAttribute("aria-current", String(!oggi));
+    if (!oggi) disegna();
+    window.scrollTo(0, 0);
+  }
+  document.getElementById("tab-oggi").addEventListener("click", function () { vaiA("oggi"); });
+  document.getElementById("tab-storico").addEventListener("click", function () { vaiA("storico"); });
+
+  // il tasto "indietro" di Android chiude un livello alla volta, non l'app
+  window.DiarioIndietro = function () {
+    if (document.documentElement.hasAttribute("data-bloccato")) {
+      // sulla schermata di apertura il tasto indietro chiude l'app, non sblocca
+      if (pinModo === "apertura") return false;
+      chiudiPin();
+      apriImpostazioni();
+      return true;
+    }
+    if (aperta("rassegna")) { chiudiRassegna(); return true; }
+    if (aperta("modale-emozioni")) {
+      daModale("modale-emozioni").classList.add("via");
+      apriImpostazioni();
+      return true;
+    }
+    if (aperta("modale-mimetico")) {
+      daModale("modale-mimetico").classList.add("via");
+      apriImpostazioni();
+      return true;
+    }
+    var dati = ["modale-esporta", "modale-importa", "modale-cancella", "modale-cancella-2", "modale-aggiorna"];
+    for (var i = 0; i < dati.length; i++) {
+      if (aperta(dati[i])) {
+        if (dati[i] === "modale-importa") daImportare = null;
+        tornaImpostazioni(dati[i]);
+        return true;
+      }
+    }
+    if (aperta("modale-impostazioni")) { daModale("modale-impostazioni").classList.add("via"); return true; }
+    if (aperta("modale-data")) { daModale("modale-data").classList.add("via"); return true; }
+    if (aperta("modale-quando")) { daModale("modale-quando").classList.add("via"); return true; }
+    if (aperta("modale-elimina")) { chiudiElimina(); return true; }
+    if (aperta("vista-storico")) { vaiA("oggi"); return true; }
+    if (inModifica) { annullaModifica(); return true; }
+    return false;
+  };
+
+  /* ------------------------------------------------------------------ *
+   *  Avvio                                                              *
+   * ------------------------------------------------------------------ */
+  voci = leggiLocale();
+  attive = leggiAttive();
+  blocco = leggiBlocco();
+  costruisciTastierino();
+  if (blocco) {
+    proteggiSchermo(true);
+    apriPin("apertura");
+  } else {
+    document.documentElement.removeAttribute("data-bloccato");
+  }
+  costruisciEmozioni();
+  costruisciIntensita();
+  aggiornaModulo();
+  scriviTestata();
+  setInterval(scriviTestata, 30000);
+  disegna();
+  avviaDb();
+})();
+</script>

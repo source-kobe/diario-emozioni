@@ -1,0 +1,20 @@
+# Chiave di firma: MAI nel repository. Chi la possiede può firmare
+# aggiornamenti che Android installa al posto dell'app vera.
+*.jks
+*.keystore
+
+# Prodotti della compilazione: l'APK si pubblica nelle Release
+build/
+*.apk
+*.idsig
+
+# Dati esportati dal diario: restano privati
+diario-emozioni-backup-*.json
+diario-emozioni-*.txt
+
+# Impostazioni locali dell'editor e degli strumenti
+.claude/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

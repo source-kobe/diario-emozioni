@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="it.diarioemozioni"
+    android:versionCode="3"
+    android:versionName="1.2-beta">
+
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+
+    <!-- Nessun accesso a contatti o archivio: il diario non esce dal telefono.
+         La rete serve solo a chiedere a GitHub se c'è una versione nuova, e solo
+         quando lo chiedi tu: la pagina del diario non la usa mai.
+         Entrambi i permessi sono "normali": concessi all'installazione. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/TemaDiario"
+        android:allowBackup="true"
+        android:hardwareAccelerated="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:configChanges="uiMode|orientation|screenSize|screenLayout|keyboardHidden|density"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Due ingressi nella home, sempre uno solo acceso: il diario com'è,
+             oppure travestito da app di sconti. L'app li scambia a richiesta. -->
+        <activity-alias
+            android:name=".Diario"
+            android:targetActivity=".MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".Sconti"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/nome_sconti"
+            android:icon="@mipmap/ic_sconti"
+            android:roundIcon="@mipmap/ic_sconti">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+</manifest>
